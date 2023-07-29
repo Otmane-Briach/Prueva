@@ -110,7 +110,7 @@ static int is_retransmission=0;
 
 static long tsecr = 0;   //que es?
 static long tsecr_already_checked = 0;
-//holaaaaaaaaaaaaaaaaa aqui aqui aqui 
+//holaaaaaaaaaaaaaaaaa aqui aqui aqui pero aqui de aqui 
 // number bytes acked
 static unsigned int acked = 0;
 // number of bytes the window must be reduced
