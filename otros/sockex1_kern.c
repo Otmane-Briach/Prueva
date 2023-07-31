@@ -5,26 +5,19 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_legacy.h>
 
+
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__type(key, u32);
 	__type(value, long);
-	__uint(max_entries, 256);
+	__uint(max_entries, 1);
 } my_map SEC(".maps");
 
 SEC("socket1")
 int bpf_prog1(struct __sk_buff *skb)
 {
-	int index = load_byte(skb, ETH_HLEN + offsetof(struct iphdr, protocol));
-	long *value;
 
-	if (skb->pkt_type != PACKET_OUTGOING)
-		return 0;
-
-	value = bpf_map_lookup_elem(&my_map, &index);
-	if (value)
-		__sync_fetch_and_add(value, skb->len);
-	//bpf_printk("el valor del mapa es: %d\n", *value);
-	return 0;
+ bpf_printk("hola");
+	return TC_ACT_OK;
 }
 char _license[] SEC("license") = "GPL";

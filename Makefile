@@ -2,16 +2,20 @@ KDIR ?= /lib/modules/$(shell uname -r)/build
 CLANG ?= clang
 LLC ?= llc
 ARCH := $(subst x86_64,x86,$(shell arch))
+CC = gcc
+CFLAGS = -I. -g -O2 -I/usr/src/linux-headers-6.2.0-25-generic/tools/bpf/resolve_btfids/libbpf/include/
+LFLAGS = -L//usr/src/linux-headers-6.2.0-25-generic/tools/bpf/resolve_btfids/libbpf -lbpf -lelf -lz
 
-BIN := sockex1_kern.o
+
+KERNEL_SOURCES = $(wildcard *kern.c)
+USER_SOURCES = $(wildcard *user.c)
+
+KERNEL_OBJECTS = $(KERNEL_SOURCES:%.c=%.o)
+EXECUTABLES = $(USER_SOURCES:%user.c=%)
+
 CLANG_FLAGS = -I. \
-	-I/home/xdp-tutorial/common/\
+	-I/usr/src/linux-headers-6.2.0-20/arch/alpha/include\
 	-I/usr/src/linux-headers-6.2.0-25-generic/tools/bpf/resolve_btfids/libbpf/include/ \
-	-I/usr/src/linux-headers-6.2.0-20-generic/tools/bpf/resolve_btfids/libbpf/include/ \
-	-I/usr/src/linux-headers-6.2.0-20-generic/arch/x86/include/generated/ \
-	-I/usr/src/linux-headers-6.2.0-25/include \
-	-I/usr/src/linux-headers-6.2.0-25/arch/x86/include/\
-	-I/home/otman/TC/linux-next/tools/testing/selftests/\
 	-D__KERNEL__ -D__BPF_TRACING__ -Wno-unused-value -Wno-pointer-sign \
 	-D__TARGET_ARCH_$(ARCH) -Wno-compare-distinct-pointer-types \
 	-Wno-gnu-variable-sized-type-not-at-end \
@@ -19,11 +23,14 @@ CLANG_FLAGS = -I. \
 	-Wno-unknown-warning-option  \
 	-g -O2 -emit-llvm
 
-all: $(BIN)
+all: $(KERNEL_OBJECTS) $(EXECUTABLES)
 
-%.o: %.c
+%kern.o: %kern.c
 	$(CLANG) $(CLANG_FLAGS) -c $< -o - | \
 		$(LLC) -march=bpf -mcpu=$(CPU) -filetype=obj -o $@
 
+%: %user.c
+	$(CC) $(CFLAGS) $< $(LFLAGS) -o $@
+
 clean:
-	rm -f *.o
+	rm -f $(KERNEL_OBJECTS) $(EXECUTABLES)
