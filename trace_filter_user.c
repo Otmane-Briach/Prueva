@@ -8,7 +8,7 @@
 #define TRACEFS_PIPE "/sys/kernel/debug/tracing/trace_pipe"
 
 #ifndef PATH_MAX
-#define PATH_MAX    4096
+#define PATH_MAX   4096
 #endif
 
 int main(int argc, char **argv)

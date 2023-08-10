@@ -3,7 +3,9 @@ CLANG ?= clang
 LLC ?= llc
 ARCH := $(subst x86_64,x86,$(shell arch))
 CC = gcc
-CFLAGS = -I. -g -O2 -I/usr/src/linux-headers-6.2.0-25-generic/tools/bpf/resolve_btfids/libbpf/include/
+CFLAGS = -I. -g -O2 -I/usr/src/linux-headers-6.2.0-25-generic/tools/bpf/resolve_btfids/libbpf/include/\
+										-I/usr/src/linux-headers-6.2.0-25/tools/lib/bpf/
+										
 LFLAGS = -L//usr/src/linux-headers-6.2.0-25-generic/tools/bpf/resolve_btfids/libbpf -lbpf -lelf -lz
 
 

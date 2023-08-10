@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <linux/if_packet.h>
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <linux/bpf.h>
@@ -13,7 +15,7 @@
 #include <linux/udp.h>
 #include <linux/icmp.h>
 #include <linux/if.h>
-#include <bpf/libbpf.h>
+
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -22,18 +24,25 @@ struct {
 	__uint(max_entries, 256);
 } my_map SEC(".maps");
 
-SEC("socket1")
+SEC("tc")
 int bpf_prog1(struct __sk_buff *skb)
 {
-	int index = load_byte(skb, ETH_HLEN + offsetof(struct iphdr, protocol));
-	long *value;
+	  struct ethhdr eth_header;
+    struct iphdr ip_header;
+    bpf_skb_load_bytes(skb, 0, &eth_header, sizeof(eth_header));
+    if (eth_header.h_proto != bpf_htons(ETH_P_IP))
+        return 0;
 
+    bpf_skb_load_bytes(skb, sizeof(eth_header), &ip_header, sizeof(ip_header));
+    int index = ip_header.protocol;
+
+    long *value;
 	if (skb->pkt_type != PACKET_OUTGOING)
 		return 0;
 
 	value = bpf_map_lookup_elem(&my_map, &index);
 	if (value)
-		__sync_fetch_and_add(value, skb->len);
+		__atomic_add_fetch(value, skb->len, __ATOMIC_RELAXED);
 
 	return 0;
 }
