@@ -68,14 +68,14 @@ int main(int argc, char **argv) {
 	// Initialize values_map
 //	value = rand()%100 +1;
 // Initialize fd_tsval_array
-/*	for (key = 0; key < MAP_SIZE; key++) {
+	for (key = 0; key < MAP_SIZE; key++) {
     	value = rand()%100 +1;
 	    if (bpf_map_update_elem(fd_tsval_array, &key, &value, BPF_ANY)) {
 	        fprintf(stderr, "Failed to update values_map\n");
 	        return EXIT_FAILURE;
 	    }
 	}
-*/
+
   /*
   value = MAX_LONG_LONG;
   for (key = 0; key < MAP_SIZE; key++) {
@@ -113,9 +113,15 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
   }
 
+  key = 0;
+  value = 0;
+  if (bpf_map_update_elem(fd_pointer, &key, &value, BPF_ANY)) {
+      fprintf(stderr, "Failed to update pointer_map\n");
+      return EXIT_FAILURE;
+  }
 
 //--------------------------------PRINT---------------------------------------//
-
+  int ya=1;
 	// Print the updated values
 	while(1) {
 	 /*   key = 0;
@@ -159,8 +165,25 @@ int main(int argc, char **argv) {
                printf("TIME_RTT[8] = %lld\n", value);
            }
 
+           key=0;
+           if (bpf_map_lookup_elem(fd_pointer, &key, &value)) {
+                fprintf(stderr, "Failed to read from pointer_map\n");
+                return EXIT_FAILURE;
+            } else {
+                printf("pointer_map = %lld\n", value);
+            }
+
           printf("\n\n");
-        sleep(3);
+          if(ya==4){
+            key = 0;
+            value = 5;
+            if (bpf_map_update_elem(fd_pointer, &key, &value, BPF_ANY)) {
+                fprintf(stderr, "Failed to update pointer_map\n");
+                return EXIT_FAILURE;
+            }
+          }
+          ya++;
+        sleep(2);
 }
 	/*while(1) {
 		    key = 0;
