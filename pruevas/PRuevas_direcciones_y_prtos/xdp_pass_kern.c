@@ -35,15 +35,8 @@
 // Data specific for RLEDBAT2
 #ifdef RLEDBAT2
 // replaces TARGET in some computations
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __s64);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} target2_map SEC(".maps");
+static __64 target2 = 0;
 #endif // RLEDBAT2
-#define RLEDBAT_WATCH_PORT 49000
 //----------------------------VVARIABLES GLOBALES-----------------------------//
 
 //----------------------------INICIALIZADOS A CERO----------------------------//
@@ -57,24 +50,16 @@ struct {
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } pointer_map SEC(".maps");
 
+struct tcp_ts_option {
+    __u32 tsval;
+    __u32 tsecr;
+};
+
 struct eth_hdr {
   	unsigned char   h_dest[ETH_ALEN];
   	unsigned char   h_source[ETH_ALEN];
   	unsigned short  h_proto;
   };
-
-struct tcp_ts_option {
-    __s64 tsval;
-    __s64 tsecr;
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, struct tcp_ts_option);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} timestamps_map SEC(".maps");
 
 // to allow computing RTT information
 struct {
@@ -84,23 +69,6 @@ struct {
     __uint(max_entries, MAX_COUNT_RTT);
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsval_rtt_array_map SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __u64);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} tsval_rtt__map SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __u64);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} tsval_rtt_old_map SEC(".maps");
-
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
@@ -116,7 +84,6 @@ struct {
     __uint(max_entries, 1);
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsecr_already_checked_map SEC(".maps");
-
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
@@ -124,46 +91,13 @@ struct {
     __uint(max_entries, 1);
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } queue_delay SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __u32);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} packet_number_map SEC(".maps");
-
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
     __uint(pinning, LIBBPF_PIN_BY_NAME);
-} is_retransmission_map SEC(".maps");
-
-struct seq {
-  __u64 last_seq;
-  __u64 last_seq_old;
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, struct seq);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} seq_map SEC(".maps");
-
-// number bytes acked
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __u32);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} acked_map SEC(".maps");
-
-
+} tsval_rtt_old_map SEC(".maps");
 
 //--------------------------INICIALIZADOS NO ZERO-----------------------------//
 
@@ -334,14 +268,7 @@ static __s64 qd_min_lastN(__s64 last_qd) {
 }
 
 static void get_TSecr(struct tcphdr *tcph, void *data, void *data_end) {
-
-__u32 key_0=0;
-struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
-if(!timestamp){
-  bpf_printk("Failed to read timestamp_map");
-  return;
-}
-
+struct tcp_ts_option timestamp = {0, 0};
 bool timestamp_encontrado = false;
 __u8 size;
 __u8 *end;
@@ -398,8 +325,8 @@ for (int i = 0; (i < MAX_OPTIONS && p < end); i++) { //-------EN ESTE BUCLE TIEN
             return;
         }
 
-        timestamp->tsval = bpf_ntohl(*(__u32 *)(p)); //ya puedo avanzar
-        timestamp->tsecr = bpf_ntohl(*(__u32 *)(p + 4));
+        timestamp.tsval = bpf_ntohl(*(__u32 *)(p)); //ya puedo avanzar
+        timestamp.tsecr = bpf_ntohl(*(__u32 *)(p + 4));
 
         break; // Terminar el bucle después de encontrar la opción de timestamp
     }
@@ -407,7 +334,7 @@ for (int i = 0; (i < MAX_OPTIONS && p < end); i++) { //-------EN ESTE BUCLE TIEN
 }
 
 if (timestamp_encontrado) {
-  bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
+  bpf_printk("TSval: %u, TSecr: %u", timestamp.tsval, timestamp.tsecr);
 } else {
   bpf_printk("El paquete recibido no tiene opciones");
 }
@@ -657,7 +584,7 @@ int tc_drop1(struct __sk_buff *skb) {
 
 
 //-----------------
-  __u32 key_0=0;
+
   __u64 denominator_CA;
   __u32 space;
   //time when the packet was received
@@ -669,127 +596,27 @@ int tc_drop1(struct __sk_buff *skb) {
     /* Source and destination ports */
   __u16 sport = bpf_ntohs(tcph->source);
   __u16 dport = bpf_ntohs(tcph->dest);
-  //last seq recieved
-  struct seq *seq_values=bpf_map_lookup_elem(&seq_map, &key_0);
-  if(!seq_values)
-    return TC_ACT_OK;
-
-  seq_values->last_seq = bpf_ntohl(tcph->seq); // numero de secuencia del paquete entrante.
-
-  //si el puerto destino es difente al que escuchamos en ledbat, skipea(para paquetes que llegan)
-  if (dport != RLEDBAT_WATCH_PORT)
-      return TC_ACT_OK;
-
-  //hace la funcion de todo el proceso de do_gettimeofday y time_to_tm
-  //nos devuelve el tiempo en nanosegundos directamente desde el inicio del sistema.
-  reception_time = bpf_ktime_get_ns();
+  __u32 last_seq = bpf_ntohl(tcph->seq); // numero de secuencia del paquete entrante.
 
 
+  bpf_printk("saddr: %u.%u.%u.%u\n",
+           saddr >> 24 & 0xFF,
+           saddr >> 16 & 0xFF,
+           saddr >> 8 & 0xFF,
+           saddr & 0xFF);
 
-  // Print and update qd_values_pointer_map
-  __u32 *value = bpf_map_lookup_elem(&packet_number_map, &key_0);
-  if (value) {
-      bpf_printk("packet_number: %lld\n", *value);
-      *value = *value + 1;
-      bpf_map_update_elem(&packet_number_map, &key_0, value, BPF_ANY);
-  }
-  get_TSecr(tcph, data, data_end);
-
-  //check if this packet is a retransmission
-  //nos fijamos en el numero de secuencia y el valor de ts_val
-  /*de entre los que recibimos con un numero de secuencia menor o igual que el ultimo
-    parquete recibido, los que tienen un tsval mayor que el del ultimo es que son retranmisiones.
-    */
+ bpf_printk("daddr: %u.%u.%u.%u\n",
+          daddr >> 24 & 0xFF,
+          daddr >> 16 & 0xFF,
+          daddr >> 8 & 0xFF,
+          daddr & 0xFF);
 
 
-  //obtenemos los punteros que apuntan a los mapas.
-  //struct seq *seq_values = bpf_map_lookup_elem(&seq_map, &key_0);
-  __u32 *is_retransmission = bpf_map_lookup_elem(&is_retransmission_map, &key_0);
-  __u64 *tsval_rtt = bpf_map_lookup_elem(&tsval_rtt__map, &key_0);
-  __u64 *tsval_rtt_old = bpf_map_lookup_elem(&tsval_rtt_old_map, &key_0);
-
-  //Check para el acceso
-  if(!is_retransmission || !tsval_rtt || !tsval_rtt_old){
-    return TC_ACT_OK;
-  }
-
-  if((seq_values->last_seq <= seq_values->last_seq_old) && (*tsval_rtt >= *tsval_rtt_old)){
-    //  bpf_printk("Es una retransmision, last_seq: %lu, last_seq_old: %lu", seq_values->last_seq, seq_values->last_seq_old );
-  		*is_retransmission=1;
-  }else{
-      //bpf_printk("No una retransmision, last_seq: %lu, last_seq_old: %lu", seq_values->last_seq, seq_values->last_seq_old);
-      *is_retransmission=0;
-  	  seq_values->last_seq_old=seq_values->last_seq;
-  }
- if (*tsval_rtt != *tsval_rtt_old){
-      *tsval_rtt_old = *tsval_rtt;
-  }
+  bpf_printk("sport: %u\n", sport);
+  bpf_printk("dport: %u\n", dport);
+  bpf_printk("last_seq: %u\n", last_seq);
 
 
-
-  //update global variables rtt and rtt_min
-  struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
-  if(!timestamp){
-    return TC_ACT_OK;
-  }
-  min_rtt(timestamp->tsecr,reception_time);
-
-  //acked= #bytes de datos que han venido en el paquete.
-  //doff suele ser igual a 5, es la cantidad de palabras de 32 bits que tenemos.
-  __u32 *acked=bpf_map_lookup_elem(&acked_map, &key_0);
-  if(!acked){
-    return TC_ACT_OK;
-  }
-
-  *acked = bpf_ntohs(iph->tot_len) - (tcph->doff * 4) - (iph->ihl * 4);
-
-// bpf_printk("Acked: %d\n", *acked);
-//  bpf_printk("iph->tot_len: %d\n",  bpf_ntohs(iph->tot_len) );
-//  bpf_printk("tcph->doff * 4: %d\n",(tcph->doff * 4) );
-//  bpf_printk("iph->ihl * 4:  %d\n",(iph->ihl * 4));
-
-
-  __u64 *rtt=bpf_map_lookup_elem(&rtt_map, &key_0);
-  __u64 *rtt_min=bpf_map_lookup_elem(&rtt_min_map, &key_0);
-  __u64 *queue_delay=bpf_map_lookup_elem(&rtt_min_map, &key_0);
-
-  if(!rtt_min || !rtt || !queue_delay)
-   return TC_ACT_OK;
-
-  *queue_delay = *rtt - *rtt_min;
-  //bpf_printk("queue_delay: %lu", *queue_delay);
-  //bpf_printk("rtt:  %lu\n",*rtt);
- //bpf_printk("rtt_min  %lu\n",*rtt_min);
-
-  #ifdef RLEDBAT2
-      // compute RLEDBAT2-specific target2 variable
-      __u64 *target2=bpf_map_lookup_elem(&target2_map, &key_0);
-      if(!target2)
-        return TC_ACT_OK;
-
-      if (*rtt_min < TARGET) {
-          *target2 = rtt_min;
-      }
-      else {
-          *target2 = TARGET;
-      }
-  #endif
-
-  // Take the min of the last LAST_QDS values
-  *queue_delay = qd_min_lastN(*queue_delay);
-
-
-  // Next we consider all the cases relevant for rledbat behavior: first packet,
-  // there is a retransmission, qd is too high, periodic slowdown to measure rttmin, etc.
-
-  // Check in the first packet (that should be a SYN) that there is an WS option included.
-  // The value used is discarded, compute a new value according to the available memory.
-  // The value is exported to the module rewriting outgoing packets, so that it changes it for
-  // all packets sent.
-
-  // window_scale= scaling factor (bytes)
-  // rcwnd_scale= number of bytes the window must be reduced
-  // rcv_wscale= scaling factor (exponent)
 
 
 

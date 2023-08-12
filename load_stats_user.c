@@ -20,6 +20,7 @@
 #define RTT_MIN_MAP_PATH "/sys/fs/bpf/tc/globals/rtt_min_map"
 #define TIME_RTT_MAP_PATH "/sys/fs/bpf/tc/globals/time_rtt_array_map"
 #define TSECR_CHEKED_PATH "/sys/fs/bpf/tc/globals/tsecr_already_checked_map"
+#define SEQ_MAP_PATH "/sys/fs/bpf/tc/globals/seq_map"
 #define MAX_LONG_LONG 9223372036854775803LL
 #define TCP_HEADER_SIZE 20
 
@@ -63,6 +64,11 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
+	int fd_seq_map= bpf_obj_get(SEQ_MAP_PATH);
+  if (fd_tsecr_cheked < 0) {
+    fprintf(stderr, "Failed to open map: %s\n", SEQ_MAP_PATH);
+    return EXIT_FAILURE;
+  }
 
 //-----------------------------------INITIALICIAR----------------------------//
 	// Initialize values_map
@@ -121,17 +127,10 @@ int main(int argc, char **argv) {
   }
 
 //--------------------------------PRINT---------------------------------------//
-  int ya=1;
+ int ya=1;
 	// Print the updated values
 	while(1) {
-	 /*   key = 0;
-	    if (bpf_map_lookup_elem(fd_pointer, &key, &value)) {
-	        fprintf(stderr, "Failed to read from pointer_map\n");
-	        return EXIT_FAILURE;
-	    } else {
-	        printf("pointer_map[0] = %lld\n", value);
-	    }
-*/
+
 			// Read and print values from last_qd_values_map
 			for (key = 0; key < MAP_SIZE; key++) {
 				    if (bpf_map_lookup_elem(fd_tsval_array, &key, &value)) {
@@ -184,7 +183,7 @@ int main(int argc, char **argv) {
           }
           ya++;
         sleep(2);
-}
+}  //--------------------RTT MIN
 	/*while(1) {
 		    key = 0;
 
@@ -201,11 +200,9 @@ int main(int argc, char **argv) {
 			}
 			printf("\n");
 	    sleep(1);
-		}*/
-
-
-		//-------------------BUCLE PARA ACCEDER A LA CABECERA TC
-		/*while (1) {
+		}*/ //------------------CABECERA TCP FIJA
+	//-------------------BUCLE PARA ACCEDER A LA CABECERA TC
+  /*while (1) {
 		    // ...
 		    // Leer y preparar la cabecera TCP
 		    struct tcphdr tcph;
@@ -224,8 +221,22 @@ int main(int argc, char **argv) {
 
 		    sleep(1);
 		}*/
+		struct seq {
+		  __u32 last_seq;
+		  __u32 last_seq_old;
+		};
+while (1) {
+	int key=0;
+	struct seq value;
+	if (bpf_map_lookup_elem(fd_seq_map, &key, &value)) {
+ 		 fprintf(stderr, "Failed to read from last_qd_values_map\n");
+ 		 return EXIT_FAILURE;
+  } else {
+ 		 printf("last_seq = %d\n", value.last_seq);
+  }
 
-
+	sleep(2);
+}
 
 
 	return EXIT_SUCCESS;
