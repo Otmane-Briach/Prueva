@@ -227,71 +227,6 @@ struct {
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } min_w_map SEC(".maps");
 
-// to know if we are reducing the window
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __u32);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} reduction_map SEC(".maps");
-
-
-
-// number of bytes the window must be reduced
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __s64);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} rcwnd_scale_map SEC(".maps");
-
-
-
-// _time values are ns
-// time to maintain the window
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __s64);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} keep_window_time_map SEC(".maps");
-
-// periodic reduction
-
-struct periodic_reduction_str{
-  __u64 periodic_reduction_time;
-  __u64 begin_periodic_reduction_time;
-  __u64 end_periodic_reduction_time;
-};
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, struct periodic_reduction_str);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} periodic_reduction_map SEC(".maps");
-
-// do not decrease until this time
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __u64);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} next_decrease_time_map SEC(".maps");
-
-// indicates if a retransmission occurred close to this time (only react with the first)
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, __s32);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} recent_retransmission_map SEC(".maps");
-
 //--------------------------INICIALIZADOS NO ZERO-----------------------------//
 
 
@@ -947,128 +882,79 @@ int tc_drop1(struct __sk_buff *skb) {
   // rcv_wscale= scaling factor (exponent)
 
 
-  struct tcp_rmem *tcp_rmem_ptr=  bpf_map_lookup_elem(&tcp_rmem_map,&key_0);
-  struct w_scale *window_scales_ptr=bpf_map_lookup_elem(&window_scales_map,&key_0);
-  struct rcwnd_ok_str *rcwnd_ok_ptr=bpf_map_lookup_elem(&rcwnd_ok_map,&key_0);
-  __u16 *min_w_ptr=bpf_map_lookup_elem(&min_w_map,&key_0);
-
 if(1==*packet_number){
+    if(getSyn(tcph) && isWSoption(tcph, data, data_end)){
 
-      if(getSyn(tcph) && isWSoption(tcph, data, data_end)){
-            __u32 rest=0;
-            __u32 tcp_rmem=0;
-            __u32 sysctl_rmem_max;
-            if(!tcp_rmem_ptr || !window_scales_ptr || !rcwnd_ok_ptr || !min_w_ptr)
-              return TC_ACT_OK;
+      __u32 rest=0;
+      __u32 tcp_rmem=0;
+      __u32 sysctl_rmem_max;
+      struct tcp_rmem *tcp_rmem_ptr=  bpf_map_lookup_elem(&tcp_rmem_map,&key_0);
+      struct w_scale *window_scales_ptr=bpf_map_lookup_elem(&window_scales_map,&key_0);
+      struct rcwnd_ok_str *rcwnd_ok_ptr=bpf_map_lookup_elem(&rcwnd_ok_map,&key_0);
+      __u16 *min_w_ptr=bpf_map_lookup_elem(&min_w_map,&key_0);
 
-            tcp_rmem=tcp_rmem_ptr->def_buff;
-            sysctl_rmem_max=tcp_rmem_ptr->max_buff;
-            space = max_t(__u32, tcp_rmem, sysctl_rmem_max); //---he creado una macro de max_t
+      if(!tcp_rmem_ptr || !window_scales_ptr || !rcwnd_ok_ptr || !min_w_ptr)
+        return TC_ACT_OK;
 
-            //A continuacion, calculamos la escala de la ventana para tcp
-            //si el tamaño de la ventana deseada es mayor que 65535
-            //(el maximo representable con 16 bits de la ventana )
-            //trataremos de encontrar un factor de escala que pueda
-            //representar ese valor.
-             while (space > 65535 && (window_scales_ptr->rcv_wscale) < 14) {
-                 space >>= 1; //(dividir por 2) porque ocupamos el doble en cada incremento.
-                 (window_scales_ptr->rcv_wscale)++;
-              }
+    tcp_rmem=tcp_rmem_ptr->def_buff;
+    sysctl_rmem_max=tcp_rmem_ptr->max_buff;
+    space = max_t(__u32, tcp_rmem, sysctl_rmem_max); //he creado una macro
+    bpf_printk("Space %d\n", space);
+    //    aqui fijamos el la escala S que vamos a usar en funcion de la memoria que tenemos.
+    //    vemos cuanto espacio ademas del maximo que podemos representar
+    //    con los bits de la ventana tenemos
 
-            //Calcula el factor de escala de ventana.
-            window_scales_ptr->window_scale=1<<(window_scales_ptr->rcv_wscale); // = 2^rcv_wscale
+    bpf_printk("rcv_wscale %d\n", window_scales_ptr->rcv_wscale);
 
-            //Establacemos la ventana en función del escalado.
-            //rcwnd_ok expresada en unidades de ventana escalada.
-            //la idea aqui es reducir el valor real de la ventana dividiendolo por el factor de escala
-            //antes de colocarlo en la cabecera TCP. El host receptor, solo multiplica por el factor de escala
-            //para obtener la ventan real.
-            rcwnd_ok_ptr->rcwnd_ok=INIT_WINDOW/window_scales_ptr->window_scale;  //init_window=1448---> expresamos crwnd_ok en unidades de ventana.
-            //Redondeamos hacia arriba
-            rest=INIT_WINDOW%window_scales_ptr->window_scale;
-            if(rest!=0){
-              rcwnd_ok_ptr->rcwnd_ok++;
-            //De esta manera, caundo windows scale sea 2^11=2048 o mas, dara
-            //cero, y rcwnd_ok valdrá su minimo que es 1.
-            }
+    //A continuacion, calculamos la escala de la ventana para tcp
 
-            // set minimum window depending on scaling
-            rest=MIN_REDUCTION_BYTES%window_scales_ptr->window_scale;
-            *min_w_ptr=MIN_REDUCTION_BYTES/window_scales_ptr->window_scale; //min reduction, 2 segmentos, 2896.
 
-            //rounding (ceil)
-            if(rest!=0){
-              (*min_w_ptr)++;
-            }
-
-      }else {
-              bpf_printk("WARNING: first packet received is not a SYN, and it should!");
-              return TC_ACT_OK;
+  //si el tamaño de la ventana deseada es mayor que 65535
+  //(el maximo representable con 16 bits de la ventana )
+  //trataremos de encontrar un factor de escala que pueda
+  //representar ese valor.
+     while (space > 65535 && (window_scales_ptr->rcv_wscale) < 14) {
+         space >>= 1; //(dividir por 2) porque ocupamos el doble en cada incremento.
+         (window_scales_ptr->rcv_wscale)++;
+           bpf_printk("Space DENTRO %d\n", space);
+          bpf_printk("rcv_wscale  DENTRO %d\n", window_scales_ptr->rcv_wscale);
       }
-}
 
-//------------------------------------------------cheked
+    bpf_printk("rcv_wscale %d\n", window_scales_ptr->rcv_wscale);
 
-  __u32 *reduction_ptr= bpf_map_lookup_elem(&reduction_map, &key_0);
-  __u32 *rcwnd_scale_ptr= bpf_map_lookup_elem(&rcwnd_scale_map, &key_0);
-  __u32 *recent_retransmission_ptr= bpf_map_lookup_elem(&recent_retransmission_map, &key_0);
-  if(!reduction_ptr || !!rcwnd_scale_ptr || !!recent_retransmission_ptr)
-    return TC_ACT_OK;
+//-------------------------
 
-  if(*reduction_ptr){
-    /* we are within an RTT for which window is being reduced, do not change window,
-      but try to reduce the amount of data previously decided (rcwnd_scale) */
+    //Calcula el factor de escala de ventana.
+    window_scales_ptr->window_scale=1<<(window_scales_ptr->rcv_wscale); // = 2^rcv_wscale
+    bpf_printk("window_scale %d\n", window_scales_ptr->window_scale);
 
-        if (*rcwnd_scale_ptr > 0){ /* adjust window with received packets */
-        //how much we have to reduce the window according to ws
-        int decrease_ws=0;
-        int rest=0;
-            //creo que rcwnd_scale es lo que calculamos que hay que quitar pero
-            //que no podemos quitar de una porque no podemos superar acked. para no encojer la ventana.
-            //entonces vamos haciendo paquete por paquete.
+    //Establacemos la ventana en función del escalado.
+    //rcwnd_ok expresada en unidades de ventana escalada.
+    //la idea aqui es reducir el valor real de la ventana dividiendolo por el factor de escala
+    //antes de colocarlo en la cabecera TCP. El host receptor, solo multiplica por el factor de escala
+    //para obtener la ventan real.
+    rcwnd_ok_ptr->rcwnd_ok=INIT_WINDOW/window_scales_ptr->window_scale;  //init_window=1448---> expresamos crwnd_ok en unidades de ventana.
+    //Redondeamos hacia arriba
+    rest=INIT_WINDOW%window_scales_ptr->window_scale;
+    if(rest!=0){
+      rcwnd_ok_ptr->rcwnd_ok++;
+    //De esta manera, caundo windows scale sea 2^11=2048 o mas, dara
+    //cero, y rcwnd_ok valdrá su minimo que es 1.
+    }
+      bpf_printk("Ventana efectiva %d\n", rcwnd_ok_ptr->rcwnd_ok);
+    // set minimum window depending on scaling
+    rest=MIN_REDUCTION_BYTES%window_scales_ptr->window_scale;
+    *min_w_ptr=MIN_REDUCTION_BYTES/window_scales_ptr->window_scale; //min reduction, 2 segmentos, 2896.
+    //rounding (ceil)
+    if(rest!=0){
+      (*min_w_ptr)++;
+    }
 
-            if(*acked >= *rcwnd_scale_ptr){
-                      //esto es porque no podemos reducir menos que la cantidad de bytes
-                      //del paquete que recibimos.
-                      // we complete the reduction now porque este paquete tiene mas bytes de los que nos falta por reducir.
-                  decrease_ws=*rcwnd_scale_ptr/window_scales_ptr->window_scale;
-                  rcwnd_ok_ptr->rcwnd_ok=decrease_ws;
-                  *reduction_ptr=0; //hemos terminado la reduccion! (lo dejamos indicado paq no entre en este if)
-                  *recent_retransmission_ptr=0;
-                  //rounding
-                  rest=*rcwnd_scale_ptr%window_scales_ptr->window_scale;
-                  if((rest>0)&&(rcwnd_ok_ptr->rcwnd_ok-1>=*min_w_ptr)){
-                            rcwnd_ok_ptr->rcwnd_ok--;
-                            //aqui se aplica el caso en el que, el total a reducir es menos que windows_scale, entonces quitamos solo 1.
-                            //porque al ser windows_scale>rcwnd_scañe entonces decrease_ws=0.
-                  }
-            *rcwnd_scale_ptr=0;	//ya no nos faltan bytes por reducir
-            }else{ //si el paquete que nos llega tiene menos bytes de los que debemos reducir, nos ajutamos
-                    //a esa cantidad.
-      				      decrease_ws=*acked/window_scales_ptr->window_scale;
-                    rest=*acked%window_scales_ptr->window_scale;
-                    if((rest>0)&&(rcwnd_ok_ptr->rcwnd_ok-1>=*min_w_ptr)){
-                        decrease_ws++;
-                    }
-
-                    if(rcwnd_ok_ptr->rcwnd_ok-decrease_ws>=*min_w_ptr){  //nos aseguramos de que no bajamos por debajo de el minimo.
-                        rcwnd_ok_ptr->rcwnd_ok-=decrease_ws;
-      				    rcwnd_scale_ptr-=decrease_ws*window_scales_ptr->window_scale;
-                    }
-                    else {
-                        rcwnd_ok_ptr->rcwnd_ok=*min_w_ptr;
-                    }
-
-                    if((rcwnd_scale_ptr<=0)||(rcwnd_ok_ptr->rcwnd_ok==*min_w_ptr)){
-                        *reduction_ptr=0;
-                        *rcwnd_scale_ptr=0;
-                        *recent_retransmission_ptr=0;
-                    }
-      			}
-        }
-}
-
-//------------------------FALTA HACER COMPROBACIONES Y ENTENDER CODIGO
+  }else {
+          bpf_printk("WARNING: first packet received is not a SYN, and it should!");
+          return TC_ACT_OK;
+      }
+  }
 
 
 //----------------------ANALISIS OPCIONES DEL PAQUETE RECIBIDO-----------------//
