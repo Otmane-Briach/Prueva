@@ -53,8 +53,6 @@ struct {
 // (either periodic or delay-triggered)
 // 2* mss
 #define MIN_REDUCTION_BYTES 2896
-#define SENDING 1
-#define RECIEVING 2
 
 #define max_t(type, x, y) ({    \
     type __x = (x);             \
@@ -73,6 +71,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } pointer_map SEC(".maps");
 
 struct eth_hdr {
@@ -100,6 +99,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, MAX_COUNT_RTT);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsval_rtt_array_map SEC(".maps");
 
 struct {
@@ -107,6 +107,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsval_rtt__map SEC(".maps");
 
 struct {
@@ -114,6 +115,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsval_rtt_old_map SEC(".maps");
 
 struct {
@@ -121,6 +123,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, MAX_COUNT_RTT);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } time_rtt_array_map SEC(".maps");
 // ts_val_array and time_rtt_array are exported to the write moduleS
 struct {
@@ -128,6 +131,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsecr_already_checked_map SEC(".maps");
 
 struct {
@@ -135,6 +139,7 @@ struct {
     __type(key, __u32);
     __type(value, __s64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } queue_delay_map SEC(".maps");
 
 struct {
@@ -142,6 +147,7 @@ struct {
     __type(key, __u32);
     __type(value, __u32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } packet_number_map SEC(".maps");
 
 struct {
@@ -149,6 +155,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } is_retransmission_map SEC(".maps");
 
 struct seq {
@@ -161,6 +168,7 @@ struct {
     __type(key, __u32);
     __type(value, struct seq);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } seq_map SEC(".maps");
 
 // number bytes acked
@@ -169,6 +177,7 @@ struct {
     __type(key, __u32);
     __type(value, __u32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } acked_map SEC(".maps");
 
 struct tcp_rmem {
@@ -186,6 +195,21 @@ struct {
 } tcp_rmem_map SEC(".maps");
 
 
+struct w_scale{
+  //scaling factor (exponent)
+  __u16 rcv_wscale;
+  //scaling factor (bytes)
+  __u32 window_scale;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, struct w_scale);
+    __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+} window_scales_map SEC(".maps");
+
 
 // will be set to MIN_REDUCTION_BYTES / window_scale:
 struct {
@@ -193,6 +217,7 @@ struct {
     __type(key, __u32);
     __type(value, __u32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } min_w_map SEC(".maps");
 
 struct {
@@ -200,6 +225,7 @@ struct {
     __type(key, __u32);
     __type(value, __s32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } increase_bytes_map SEC(".maps");
 
 // to know if we are reducing the window
@@ -208,6 +234,7 @@ struct {
     __type(key, __u32);
     __type(value, __u32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } reduction_map SEC(".maps");
 
 
@@ -218,6 +245,7 @@ struct {
     __type(key, __u32);
     __type(value, __s64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } rcwnd_scale_map SEC(".maps");
 
 
@@ -229,6 +257,7 @@ struct {
     __type(key, __u32);
     __type(value, __s64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } keep_window_time_map SEC(".maps");
 
 // periodic reduction
@@ -243,6 +272,7 @@ struct {
     __type(key, __u32);
     __type(value, struct periodic_reduction_str);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } periodic_reduction_map SEC(".maps");
 
 // do not decrease until this time
@@ -251,6 +281,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } next_decrease_time_map SEC(".maps");
 
 // indicates if a retransmission occurred close to this time (only react with the first)
@@ -259,6 +290,7 @@ struct {
     __type(key, __u32);
     __type(value, __s32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } recent_retransmission_map SEC(".maps");
 
 struct {
@@ -274,12 +306,14 @@ struct {
     __type(key, __u32);
     __type(value, __s32);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } periodic_reduction_scheduled_map SEC(".maps");
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } to_increase_CA_map SEC(".maps");
 
 
@@ -321,7 +355,7 @@ struct {
 
 struct rcwnd_ok_str {
   // effective reception window
-  __u64 rcwnd_ok; //----------------Solo este valor.
+  __u64 rcwnd_ok;
   // Can be used for debug. The write module imports it but doesn't use it
   __u64 rcwnd_ok_before;
 };
@@ -360,22 +394,6 @@ struct {
     __uint(max_entries, 1);
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } freeze_ended_map SEC(".maps");
-
-struct w_scale{
-  //scaling factor (exponent)
-  __u16 rcv_wscale;
-  //scaling factor (bytes)
-  __u32 window_scale; //-----------------SOLO ESTE VALOR.
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u32);
-    __type(value, struct w_scale);
-    __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} window_scales_map SEC(".maps");
-
 
 //-------------------------INICIALIZADOS A MAX_WINDOW-------------------------//
 //slow start threshold
@@ -526,10 +544,7 @@ static __s64 qd_min_lastN(__s64 last_qd) {
     return min_value;
 }
 
-static inline void get_TSecr(struct tcphdr *tcph, void *data, void *data_end, __u8 context) {
-
-
-
+static void get_TSecr(struct tcphdr *tcph, void *data, void *data_end) {
 
 __u32 key_0=0;
 struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
@@ -537,7 +552,6 @@ if(!timestamp){
   bpf_printk("Failed to read timestamp_map");
   return;
 }
-
 
 bool timestamp_encontrado = false;
 __u8 size;
@@ -603,17 +617,11 @@ for (int i = 0; (i < MAX_OPTIONS && p < end); i++) { //-------EN ESTE BUCLE TIEN
     p += (size - 2);
 }
 
-          if (timestamp_encontrado) {
-                if(context==SENDING)
-                    bpf_printk("SENDING");
-                else
-                    bpf_printk("RECIEVING");
-
-                bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
-
-          } else {
-            bpf_printk("El paquete recibido no tiene opciones");
-          }
+if (timestamp_encontrado) {
+  bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
+} else {
+  bpf_printk("El paquete recibido no tiene opciones");
+}
   return;
 }
 
@@ -845,6 +853,9 @@ static __s64 bytes_to_decrease_rledbat(__u64 window,__u64 scale, __u64 queue_del
     }
 }
 
+
+
+
 static void update_state(char *new_state) {
     __u32 key = 0;
     char *current_state;
@@ -872,58 +883,9 @@ char *get_current_state() {
 
 
 //---------------------------------TESTEO-------------------------------------//
-
-SEC("tc-out")
-int tc_drop2(struct __sk_buff *skb){
-
-  void *data = (void *)(long)skb->data;
-  void *data_end = (void *)(long)skb->data_end;
-
-// COMPROBACIONES INICIALES DE SEGURIDAD DE LIMITES DE MEMORIA
-
-  if (data + sizeof(struct eth_hdr) > data_end)
-    return TC_ACT_OK;
-
-  struct eth_hdr *eth = data;
-
-  if (eth->h_proto != bpf_htons(ETH_P_IP))
-    return TC_ACT_OK;
-
-  struct iphdr *iph = data + sizeof(struct eth_hdr);
-
-  if ((void*)iph + sizeof(struct iphdr) > data_end)
-    return TC_ACT_OK;
-
-  if (iph->protocol != IPPROTO_TCP)
-    return TC_ACT_OK;
-
-  struct tcphdr *tcph = data + sizeof(*eth) + sizeof(*iph);
-
-  if ((void*)tcph + sizeof(struct tcphdr) > data_end)
-    return TC_ACT_OK;
-
-
-    __u64 sending_time;
-    sending_time=bpf_ktime_get_ns();
-
-
-
-
-    get_TSecr(tcph, data, data_end, SENDING);
-
-
-
-    //bpf_printk("TSecr: %lld, Tsval: %lld\n", timestamp->tsecr, timestamp->tsval);
-
-return TC_ACT_OK;
-}
-
-
 // Función principal
-SEC("tc-in")
+SEC("tc")
 int tc_drop1(struct __sk_buff *skb) {
-
-
 
   void *data = (void *)(long)skb->data;
   void *data_end = (void *)(long)skb->data_end;
@@ -979,7 +941,7 @@ int tc_drop1(struct __sk_buff *skb) {
   //hace la funcion de todo el proceso de do_gettimeofday y time_to_tm
   //nos devuelve el tiempo en nanosegundos directamente desde el inicio del sistema.
   reception_time = bpf_ktime_get_ns();
-  update_state("undef");
+
 
 
   // Print and update qd_values_pointer_map
@@ -993,7 +955,7 @@ int tc_drop1(struct __sk_buff *skb) {
   bpf_map_update_elem(&packet_number_map, &key_0, packet_number, BPF_ANY);
 
 
-  get_TSecr(tcph, data, data_end, RECIEVING);
+  get_TSecr(tcph, data, data_end);
 
   //check if this packet is a retransmission
   //nos fijamos en el numero de secuencia y el valor de ts_val
@@ -1013,11 +975,11 @@ int tc_drop1(struct __sk_buff *skb) {
   __u64 *tsval_rtt = bpf_map_lookup_elem(&tsval_rtt__map, &key_0);
   __u64 *tsval_rtt_old = bpf_map_lookup_elem(&tsval_rtt_old_map, &key_0);
   __u64 *to_increase_CA_ptr = bpf_map_lookup_elem(&to_increase_CA_map, &key_0);
-  __u64 *next_decrease_time_ptr=bpf_map_lookup_elem(&next_decrease_time_map, &key_0);
-  __s32 *increase_bytes_ptr=bpf_map_lookup_elem(&increase_bytes_map, &key_0);
+
+
 
   //Check para el acceso
-  if(!is_retransmission || !tsval_rtt || !tsval_rtt_old || !to_increase_CA_ptr || !next_decrease_time_ptr ||  !increase_bytes_ptr){
+  if(!is_retransmission || !tsval_rtt || !tsval_rtt_old || !to_increase_CA_ptr){
     return TC_ACT_OK;
   }
 
@@ -1032,6 +994,8 @@ int tc_drop1(struct __sk_buff *skb) {
  if (*tsval_rtt != *tsval_rtt_old){
       *tsval_rtt_old = *tsval_rtt;
   }
+
+
 
   //update global variables rtt and rtt_min
   struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
@@ -1094,17 +1058,16 @@ int tc_drop1(struct __sk_buff *skb) {
   // rcwnd_scale= number of bytes the window must be reduced
   // rcv_wscale= scaling factor (exponent)
 
+
   struct tcp_rmem *tcp_rmem_ptr=  bpf_map_lookup_elem(&tcp_rmem_map,&key_0);
   struct w_scale *window_scales_ptr=bpf_map_lookup_elem(&window_scales_map,&key_0);
   struct rcwnd_ok_str *rcwnd_ok_ptr=bpf_map_lookup_elem(&rcwnd_ok_map,&key_0);
   __u16 *min_w_ptr=bpf_map_lookup_elem(&min_w_map,&key_0);
 
-
-
   if(!tcp_rmem_ptr || !window_scales_ptr || !rcwnd_ok_ptr || !min_w_ptr)
     return TC_ACT_OK;
 
- //bpf_printk(" PRIMERO window :%lld",rcwnd_ok_ptr->rcwnd_ok);
+
 if(1==*packet_number){
 
       if(getSyn(tcph) && isWSoption(tcph, data, data_end)){
@@ -1176,12 +1139,14 @@ if(1==*packet_number){
     //rcwnd_ok_ptr la ventana que se envia en tcp
     //rcwnd_scale_ptr numero de bytes que la ventana tiene que ser reducida.
 
+
   __s32 *periodic_reduction_scheduled_ptr= bpf_map_lookup_elem(&periodic_reduction_scheduled_map, &key_0);
   __s32 *freeze_ended_ptr= bpf_map_lookup_elem(&freeze_ended_map, &key_0);
   __s32 *ssthresh_ptr= bpf_map_lookup_elem(&ssthresh_map, &key_0);
   __s32 *is_ss_allowed_ptr= bpf_map_lookup_elem(&is_ss_allowed_map, &key_0);
   __u64 *rtt_ptr = bpf_map_lookup_elem(&rtt_map, &key_0);
   __u64 *rtt_min_ptr = bpf_map_lookup_elem(&rtt_min_map, &key_0);
+
 
 
     if(!periodic_reduction_scheduled_ptr || !freeze_ended_ptr || !ssthresh_ptr || !is_ss_allowed_ptr ||!rtt_ptr ||!rtt_min_ptr)
@@ -1254,19 +1219,12 @@ if(1==*packet_number){
           			update_state("reducing");
           		}
 
-    //----------------------------------
-/*
-    Tenemos que ver si es una retransmision reciente para actuar en consecuencia solo 1 vez.
-    Tras la primera retransmisión, el sistema actualiza el umbral de inicio lento (ssthresh),
-    pero no reduce inmediatamente la ventana.
-    Si ocurre otra condición que indica congestión (posiblemente una nueva retransmisión u otra señal de congestión),
-    el sistema se prepara para reducir la ventana en las siguientes iteraciones
-*/
-    //----------------------------------
+      //----------------
 
           if(*is_retransmission && !*recent_retransmission_ptr){
               *recent_retransmission_ptr=1;
               //if there is a loss and we are in a periodic reduction update ssthresh to rcwnd_ok/2
+              //Cuando periodic_reduction_shedled=1, quiere decir que no estmos en reducion periodica?
               if(!*periodic_reduction_scheduled_ptr&&!*freeze_ended_ptr){
 
                   __u64 ssthresh_aux=rcwnd_ok_ptr->rcwnd_ok/2;
@@ -1279,18 +1237,18 @@ if(1==*packet_number){
                   update_state("perio_red+retr");
               }
               else {
-              //we drop to minimum and grow in ss
-              //no estamos en Periodic reduction, ha habido otra perdida, actuamos bajando la ventana al minimo.
-              //pero como no podemos hacerlo de golpe, calculamos el rcwnd_scale y vamos haciendolo por cada paquete que llega.
-
+                  //we drop to minimum and grow in ss
+                  //no estamos en Periodic reduction, ha habido una perdida, bajamos la ventana al minimo
+                  //pero como no podemos hacerlo, calculamos
+                  //el rcwnd_scale y vamos haciendolo por cada paquete que llega.
               		__u64 ssthresh_aux=rcwnd_ok_ptr->rcwnd_ok/2;//marcamos el peligro en la mitad de la ventana.
               		*rcwnd_scale_ptr = (rcwnd_ok_ptr->rcwnd_ok - *min_w_ptr)*window_scales_ptr->window_scale; //cantidad de bytes que hay
                   //que reducir para llegar al minimo
 
           				if(ssthresh_aux>=*min_w_ptr)
           					  *ssthresh_ptr=ssthresh_aux;
-                        else
-                              *ssthresh_ptr=*min_w_ptr;
+                  else
+                      *ssthresh_ptr=*min_w_ptr;
 
                       *reduction_ptr=1; //entramos en reduccion.
                       *is_ss_allowed_ptr=1; //entramos en ss
@@ -1301,26 +1259,23 @@ if(1==*packet_number){
                   *rtt_ptr = *rtt_min_ptr;
 
             	}
-            }
+            }//---------------------------------------------------------------cambiado sin entender
   }//SEE IF HE HAVE TO MAINTAIN THE WINDOW
 	  else if(reception_time<*keep_window_time_ptr){
-
-            //Do nothing
-            update_state("frozen");
-
-            //Si hay una retransmisión durante este congelamiento, se actualiza el umbral ssthresh.
+        //Do nothing
+        update_state("frozen");
 
     		if(*is_retransmission){
 
-                    __u64 ssthresh_aux=rcwnd_ok_ptr->rcwnd_ok/2;
+            __u64 ssthresh_aux=rcwnd_ok_ptr->rcwnd_ok/2;
 
-                        if(ssthresh_aux>=*min_w_ptr)
-                		    *ssthresh_ptr=ssthresh_aux;
-                		else
-                            *ssthresh_ptr=*min_w_ptr;
+            if(ssthresh_aux>=*min_w_ptr)
+        		    *ssthresh_ptr=ssthresh_aux;
+        		else
+                *ssthresh_ptr=*min_w_ptr;
 
-                    update_state("frozen+retrans");
-            }
+            update_state("frozen+retrans");
+        }
 
 	}else{
             //CHANGE THE WINDOW  (si no estamos en reduccion, la ventana no esta congelada, y hemos superado keep_window_time)
@@ -1330,15 +1285,16 @@ if(1==*packet_number){
             //aqui nos encargamos de actualizar el keepwindowtime y, inmediatamente despues, cogengelar.
             //en el if de arriba para el siguiente paquete que llega
 
+            __u64 *next_decrease_time_ptr=bpf_map_lookup_elem(&next_decrease_time_map, &key_0);
+            __s32 *increase_bytes_ptr=bpf_map_lookup_elem(&increase_bytes_map, &key_0);
+
+
+            if(!next_decrease_time_ptr ||  !increase_bytes_ptr)
+              return TC_ACT_OK;
 
 
 
             if(!*freeze_ended_ptr){
-
-                /*
-                la ventana acaba de salir de un estado de "reducción periódica" y
-                ahora debe "congelarse" por cierto tiempo. La ventana se congela por un tiempo de 2 rtts:
-                */
 
                 *keep_window_time_ptr=reception_time +2*(*rtt_ptr);
                 update_state("freezing");
@@ -1355,11 +1311,10 @@ if(1==*packet_number){
                     update_state("freeze+retrans");
                 }
 
-            }//---------------------------------------------------------------cambiado sin entender
+            }
 
             //CASO: no estamos en redución y la ventana no esta congelada
-
-            //See if we have to do a periodic slowdown
+        		//See if we have to do a periodic slowdown
             //para ver si hay que hacer slowdown, la pregunta es, ¿se cumple que
             //no estamos en el primer ss y ha llegado el timepo de hacer slowdown y hay alguno programado?
             //el periodic slowdown es algo que se programa para hacer Cada periodic_reduction_time.
@@ -1373,15 +1328,15 @@ if(1==*packet_number){
                 }
 
                 *reduction_ptr=1; //Activamos reduccion.
-                periodic_reduction_ptr->begin_periodic_reduction_time=reception_time; //registramos cuando empieza.
+                periodic_reduction_ptr->begin_periodic_reduction_time=reception_time;
                 //set ssthresh to th current rcwnd
                 *ssthresh_ptr=rcwnd_ok_ptr->rcwnd_ok;
                 update_state("perio_red");
                 *freeze_ended_ptr=0;
                 *is_ss_allowed_ptr=1;
                 *periodic_reduction_scheduled_ptr=0; //desactivamos porque la gastamos ahora.
-
                 if(*is_retransmission){
+
                     __u64 ssthresh_aux=rcwnd_ok_ptr->rcwnd_ok/2;
 
                     if(ssthresh_aux>=*min_w_ptr)
@@ -1391,7 +1346,6 @@ if(1==*packet_number){
 
                     update_state("perio_red+retr");
                 }
-
             }
             //Se if there has been a packet loss
             else if(*is_retransmission){
@@ -1435,13 +1389,13 @@ if(1==*packet_number){
 
             		//See if we have to decrease the window
                  #ifdef RLEDBAT2
-            else if((*queue_delay_ptr>*target2)&&((!*is_first_ss_ptr)||(*periodic_reduction_scheduled_ptr))){
-              //bpf_printk("Entro en el if del ifdef ");
+            else if((*queue_delay_ptr>*target2)&&((!is_first_ss)||(periodic_reduction_scheduled))){
+              bpf_printk("Entro en el if del ifdef ");
 
                  #else
             // regular rledbat //aqui basicamente entramos cuando superamos el target, para activar la reduccion.
             else if((*queue_delay_ptr>TARGET)&&((!*is_first_ss_ptr)||(*periodic_reduction_scheduled_ptr))){
-                //bpf_printk("Entro en el else del ifdef");
+                bpf_printk("Entro en el else del ifdef");
                 #endif
 
                       if(reception_time>=*next_decrease_time_ptr){
@@ -1450,7 +1404,7 @@ if(1==*packet_number){
                               *is_ss_allowed_ptr=0;
 
                          //standard decrease
-                            //rledbat and RLEDBAT2-specific
+                            //rledbat and RLEDBAT2
                             //W += max( (GAIN - Constant * W * (delay/target - 1)), -W/2) )
                              decrease_aux=bytes_to_decrease_rledbat(rcwnd_ok_ptr->rcwnd_ok,window_scales_ptr->window_scale,*queue_delay_ptr,*rtt_min_ptr);
 
@@ -1517,8 +1471,6 @@ if(1==*packet_number){
                                   update_state("waitrtt2dec");
                                }
 
-
-                      //si no hemos superado el target, seguimos creciendo, y decidimos si en ss o en CA.
                       //See how we grow//---------------
                       }
                       else{
@@ -1625,30 +1577,20 @@ if(1==*packet_number){
                 }
               }
 
-   char *state=get_current_state();
-   if(!state)
+
+   //else general
+    char *state=get_current_state();
+    if(!state)
     return TC_ACT_OK;
+    bpf_printk("El estado es: %s", state);
 
-/*
-   bpf_printk("read;reception_time; %lld, rtt: %lld, rtt_min: %lld",reception_time, *rtt_ptr, *rtt_min_ptr);
-   //bpf_printk(" rtt: %lld",*rtt_ptr);
-   //bpf_printk(" rtt_min: %lld ",*rtt_min_ptr);
-   bpf_printk(" window :%lld",rcwnd_ok_ptr->rcwnd_ok);
-   bpf_printk(" thresh :%lld",*ssthresh_ptr);
-   bpf_printk(" State: %s", state);
-   bpf_printk(" is_retransmission :%lld",*is_retransmission);
-   bpf_printk(" rcwnd_scale :%lld",*rcwnd_scale_ptr);
-   bpf_printk(" reduction :%lld",*reduction_ptr);
-   bpf_printk(" queue_delay :%lld",*queue_delay_ptr);
-   bpf_printk(" TARGET :%lld",TARGET);
-   bpf_printk(" rcv_wscale :%lld",window_scales_ptr->rcv_wscale);
-   bpf_printk(" acked :%lld",*acked);
-   bpf_printk(" window_scale :%lld",window_scales_ptr->window_scale);
-   bpf_printk(" increase_bytes :%lld",*increase_bytes_ptr);
-   bpf_printk(" gain :%lld",gain(*rtt_min_ptr));
-   bpf_printk(" periodic_reduction_time :%lld",periodic_reduction_ptr->periodic_reduction_time);
 
-*/
+
+  long long res=custom_divide(-963258,236589);
+  bpf_printk("Con signo: %lld", res);
+  res=custom_divide(963258,236589);
+  bpf_printk("Sin signo : %lld ", res);
+
     //------------------------FALTA HACER COMPROBACIONES Y ENTENDER CODIGO
 
 

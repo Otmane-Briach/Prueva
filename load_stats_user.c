@@ -14,21 +14,30 @@
 //------------------------------DEFINES---------------------------------------//
 #define MAP_SIZE 20
 #define BPF_OBJ_FILE "xdp_pass_kern.o"
-#define POINTER_MAP_PATH "/sys/fs/bpf/tc/globals/pointer_map"
 #define VALUES_MAP_PATH "/sys/fs/bpf/tc/globals/values_map"
-#define TSVAL_RTT_ARRAY_MAP_PATH "/sys/fs/bpf/tc/globals/tsval_rtt_array_map"
 #define RTT_MIN_MAP_PATH "/sys/fs/bpf/tc/globals/rtt_min_map"
-#define TIME_RTT_MAP_PATH "/sys/fs/bpf/tc/globals/time_rtt_array_map"
-#define TSECR_CHEKED_PATH "/sys/fs/bpf/tc/globals/tsecr_already_checked_map"
-#define SEQ_MAP_PATH "/sys/fs/bpf/tc/globals/seq_map"
-#define TCP_RMEM_MAP_PATH "/sys/fs/bpf/tc/globals/tcp_rmem_map"
+#define RTT_MAP_PATH "/sys/fs/bpf/tc/globals/rtt_map"
 #define RCWND_OK_MAP_PATH "/sys/fs/bpf/tc/globals/rcwnd_ok_map"
+#define TCP_RMEM_MAP_PATH "/sys/fs/bpf/tc/globals/tcp_rmem_map"
+#define IS_FIRST_SS_MAP_PATH "/sys/fs/bpf/tc/globals/is_first_ss_map"
+#define IS_SS_ALLOWED_MAP_PATH "/sys/fs/bpf/tc/globals/is_ss_allowed_map"
+#define FREEZE_ENDED_MAP_PATH "/sys/fs/bpf/tc/globals/freeze_ended_map"
+#define WINDOW_SCALES_MAP_PATH "/sys/fs/bpf/tc/globals/window_scales_map"
+
 
 #define TCP_RMEM_PATH "/proc/sys/net/ipv4/tcp_rmem"
 #define MAX_LONG_LONG 9223372036854775803LL
 #define TCP_HEADER_SIZE 20
 #define MSS 1448 //unidad de ventana
 #define INIT_WINDOW 1*MSS //Ventana inicial
+
+struct rcwnd_ok_str {
+  // effective reception window
+  __u64 rcwnd_ok; //----------------Solo este valor.
+  // Can be used for debug. The write module imports it but doesn't use it
+  __u64 rcwnd_ok_before;
+};
+
 
 int main(int argc, char **argv) {
 	__u32 key;
@@ -42,68 +51,54 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Failed to open map: %s\n", VALUES_MAP_PATH);
 		return EXIT_FAILURE;
 	}
-	int fd_pointer = bpf_obj_get(POINTER_MAP_PATH);
-	if (fd_pointer < 0) {
-		fprintf(stderr, "Failed to open map: %s\n", POINTER_MAP_PATH);
-		return EXIT_FAILURE;
-	}
-  int fd_tsval_array = bpf_obj_get(TSVAL_RTT_ARRAY_MAP_PATH);
-  if (fd_pointer < 0) {
-    fprintf(stderr, "Failed to open map: %s\n", TSVAL_RTT_ARRAY_MAP_PATH);
-    return EXIT_FAILURE;
-  }
 
   int fd_rtt_min = bpf_obj_get(RTT_MIN_MAP_PATH);
   if (fd_rtt_min < 0) {
     fprintf(stderr, "Failed to open map: %s\n", RTT_MIN_MAP_PATH);
     return EXIT_FAILURE;
   }
-  int fd_time_rtt = bpf_obj_get(TIME_RTT_MAP_PATH);
-  if (fd_time_rtt < 0) {
-    fprintf(stderr, "Failed to open map: %s\n", TIME_RTT_MAP_PATH);
-    return EXIT_FAILURE;
-  }
-  int fd_tsecr_cheked = bpf_obj_get(TSECR_CHEKED_PATH);
-  if (fd_tsecr_cheked < 0) {
-    fprintf(stderr, "Failed to open map: %s\n", TSECR_CHEKED_PATH);
-    return EXIT_FAILURE;
-  }
 
-	int fd_seq_map= bpf_obj_get(SEQ_MAP_PATH);
-  if (fd_tsecr_cheked < 0) {
-    fprintf(stderr, "Failed to open map: %s\n", SEQ_MAP_PATH);
+	int fd_rtt = bpf_obj_get(RTT_MAP_PATH);
+  if (fd_rtt < 0) {
+    fprintf(stderr, "Failed to open map: %s\n", RTT_MAP_PATH);
     return EXIT_FAILURE;
   }
 
 	int fd_tcp_rmem = bpf_obj_get(TCP_RMEM_MAP_PATH);
 	if (fd_tcp_rmem < 0) {
-		fprintf(stderr, "Failed to open map: %s\n", VALUES_MAP_PATH);
+		fprintf(stderr, "Failed to open map: %s\n", TCP_RMEM_MAP_PATH);
 		return EXIT_FAILURE;
 	}
 
+	int fd_is_first_ss = bpf_obj_get(IS_FIRST_SS_MAP_PATH);
+	if (fd_is_first_ss < 0) {
+		fprintf(stderr, "Failed to open map: %s\n", IS_FIRST_SS_MAP_PATH);
+		return EXIT_FAILURE;
+	}
 
-	int fd_rcwnd_ok = bpf_obj_get(RCWND_OK_MAP_PATH);
-	if (fd_tcp_rmem < 0) {
+	int fd_is_ss_allowed = bpf_obj_get(IS_SS_ALLOWED_MAP_PATH);
+	if (fd_is_ss_allowed < 0) {
+		fprintf(stderr, "Failed to open map: %s\n", IS_SS_ALLOWED_MAP_PATH);
+		return EXIT_FAILURE;
+	}
+
+	int fd_freeze_ended = bpf_obj_get(FREEZE_ENDED_MAP_PATH);
+	if (fd_freeze_ended < 0) {
+		fprintf(stderr, "Failed to open map: %s\n", FREEZE_ENDED_MAP_PATH);
+		return EXIT_FAILURE;
+	}
+	int fd_rcwnd_ok_map = bpf_obj_get(RCWND_OK_MAP_PATH);
+	if (fd_rcwnd_ok_map < 0) {
 		fprintf(stderr, "Failed to open map: %s\n", RCWND_OK_MAP_PATH);
 		return EXIT_FAILURE;
 	}
-//-----------------------------------INITIALICIAR----------------------------//
-	// Initialize values_map
-//	value = rand()%100 +1;
-
-//     SE RELLENA EN EL KERNEL? SE USA EXPORT_SIMBOL PARA ESTO
-
-// Initialize fd_tsval_array EN FORMA DE PRUEVAS
-	/*for (key = 0; key < MAP_SIZE; key++) {
-    	value = rand()%100 +1;
-	    if (bpf_map_update_elem(fd_tsval_array, &key, &value, BPF_ANY)) {
-	        fprintf(stderr, "Failed to update map: %s\n", TSVAL_RTT_ARRAY_MAP_PATH);
-	        return EXIT_FAILURE;
-	    }
+	int fd_window_scales_map = bpf_obj_get(WINDOW_SCALES_MAP_PATH);
+	if (fd_window_scales_map < 0) {
+		fprintf(stderr, "Failed to open map: %s\n", WINDOW_SCALES_MAP_PATH);
+		return EXIT_FAILURE;
 	}
-*/
 
-
+//-----------------------------------INITIALICIAR----------------------------//
 
 //INITIALIZE LAS_QD_VALUES
   value = MAX_LONG_LONG;
@@ -121,162 +116,67 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
   }
 
-	/*key = 0;
-  value = 0;
-  if (bpf_map_update_elem(fd_tsecr_cheked, &key, &value, BPF_ANY)) {
-      fprintf(stderr, "Failed to update tsecr_cheked_map\n");
-      return EXIT_FAILURE;
-  }*/
-
-
-
-// TSVAL RTT Y TIME_RTT SE RELLENAN A LA VEZ Y DE FORMA SINCRONIZADA, ES MEJOR HACERLO EN UNA ESTRUCTURA.
-
-  key = 8;
-  value = 50;
-  if (bpf_map_update_elem(fd_time_rtt, &key, &value, BPF_ANY)) {
-      fprintf(stderr, "Failed to update map: %s\n", TIME_RTT_MAP_PATH);
-      return EXIT_FAILURE;
-  }
-
-  key = 0;
-  value = 0;
-  if (bpf_map_update_elem(fd_pointer, &key, &value, BPF_ANY)) {
-      fprintf(stderr, "Failed to update pointer_map\n");
-      return EXIT_FAILURE;
-  }
-
-
 	key = 0;
-  value = INIT_WINDOW ;
-  if (bpf_map_update_elem(fd_rcwnd_ok, &key, &value, BPF_ANY)) {
-      fprintf(stderr, "Failed to update pointer_map\n");
-      return EXIT_FAILURE;
-  }
-//--------------------------------PRINT---------------------------------------//
- //int ya=1;
-	// Print the updated values
-	/*while(1) {
+	value = MAX_LONG_LONG;
+	if (bpf_map_update_elem(fd_rtt, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
 
-			// Read and print values from last_qd_values_map
-			for (key = 0; key < MAP_SIZE; key++) {
-				    if (bpf_map_lookup_elem(fd_tsval_array, &key, &value)) {
-				        fprintf(stderr, "Failed to read from last_qd_values_map\n");
-				        return EXIT_FAILURE;
-				    } else {
-				        printf("fd_tsval_array[%u] = %lld\n", key, value);
-				    }
-				}
-        printf("-------------------------------\n");
-
-        key = 0;
-     	    if (bpf_map_lookup_elem(fd_rtt_min, &key, &value)) {
-     	        fprintf(stderr, "Failed to read from pointer_map\n");
-     	        return EXIT_FAILURE;
-     	    } else {
-     	        printf("RTT_MIN = %lld\n", value);
-     	    }
-          if (bpf_map_lookup_elem(fd_tsecr_cheked, &key, &value)) {
-     	        fprintf(stderr, "Failed to read from pointer_map\n");
-     	        return EXIT_FAILURE;
-     	    } else {
-     	        printf("Alreade_cheked = %lld\n", value);
-     	    }
-
-          key=8;
-          if (bpf_map_lookup_elem(fd_time_rtt, &key, &value)) {
-               fprintf(stderr, "Failed to read from pointer_map\n");
-               return EXIT_FAILURE;
-           } else {
-               printf("TIME_RTT[8] = %lld\n", value);
-           }
-
-           key=0;
-           if (bpf_map_lookup_elem(fd_pointer, &key, &value)) {
-                fprintf(stderr, "Failed to read from pointer_map\n");
-                return EXIT_FAILURE;
-            } else {
-                printf("pointer_map = %lld\n", value);
-            }
-
-          printf("\n\n");
-          if(ya==4){
-            key = 0;
-            value = 5;
-            if (bpf_map_update_elem(fd_pointer, &key, &value, BPF_ANY)) {
-                fprintf(stderr, "Failed to update pointer_map\n");
-                return EXIT_FAILURE;
-            }
-          }
-          ya++;
-        sleep(2);
-}  */
- //--------------------RTT MIN
-	/*while(1) {
-		    key = 0;
-
-				// Read and print the TCP header from tcp_header_map
-			printf("TCP Header: ");
-			__u8 tcp_byte;
-			for (key = 0; key < TCP_HEADER_SIZE; key++) {
-					if (bpf_map_lookup_elem(fd_tcphdr, &key, &tcp_byte)) {
-							fprintf(stderr, "Failed to read from tcp_header_map\n");
-							return EXIT_FAILURE;
-					} else {
-							printf("%02x ", tcp_byte);
-					}
-			}
-			printf("\n");
-	    sleep(1);
-		}*/ //------------------CABECERA TCP FIJA
-	//-------------------BUCLE PARA ACCEDER A LA CABECERA TC
-  /*while (1) {
-		    // ...
-		    // Leer y preparar la cabecera TCP
-		    struct tcphdr tcph;
-		    for (key = 0; key < 32; key++) {
-		        if (bpf_map_lookup_elem(fd_tcphdr, &key, &((uint8_t *)&tcph)[key])) {
-		            fprintf(stderr, "Failed to read from tcp_header_map\n");
-		            return EXIT_FAILURE;
-		        }
-		    }
-
-		    // Llamar a la función para obtener el valor TSecr
-		    get_TSecr(&tcph);
+//------------------------------
 
 
-		    // Otras acciones...
+//-----------------------------
+struct rcwnd_ok_str rcwnd_ok_value={0,0}; // Allocating on stack instead of pointer.
+key = 0; // Assuming you are using the key 0 since max_entries is 1 and no key was provided.
 
-		    sleep(1);
-		}*/
-//--------------------------------------------------------
-/*		struct seq {
-		  __u32 last_seq;
-		  __u32 last_seq_old;
-		};
-while (1) {
-	int key=0;
-	struct seq value;
-	if (bpf_map_lookup_elem(fd_seq_map, &key, &value)) {
- 		 fprintf(stderr, "Failed to read from last_qd_values_map\n");
- 		 return EXIT_FAILURE;
-  } else {
- 		 printf("last_seq = %d\n", value.last_seq);
-  }
+rcwnd_ok_value.rcwnd_ok = INIT_WINDOW;
 
-	sleep(2);
+if (bpf_map_update_elem(fd_rcwnd_ok_map, &key, &rcwnd_ok_value, BPF_ANY)) {
+	fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH); // NOTE: you mentioned RTT_MIN_MAP_PATH. Shouldn't it be RCWND_OK_MAP_PATH?
+	return EXIT_FAILURE;
 }
-*/
+ printf("rcwnd_ok_value: %lli\n",rcwnd_ok_value.rcwnd_ok);
 
 
+//------------------------------------
+
+	value=1;
+	if (bpf_map_update_elem(fd_is_first_ss, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
+
+	if (bpf_map_update_elem(fd_is_ss_allowed, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
+
+
+	if (bpf_map_update_elem(fd_freeze_ended, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
+
+
+
+
+	//------------------------------
+
+	printf("Mapas inicializados\n\n");
+//--------------------------------PRINT---------------------------------------//
+
+
+//Resetear packet_numeber
 	int ret = system("sudo rm /sys/fs/bpf/tc/globals/packet_number_map");
 	 if (ret == -1) {
 			 perror("Error al ejecutar el comando");
 			 return 1;
 	 }
-	 printf("Mapa pcket_number RESETEADO\n" );
+	 printf("Mapa pcket_number: RESETEADO\n" );
 
 
+//obtener valores sysctl_rmem
 FILE *fp;
  int tcp_rmem_values[3];
 
@@ -319,9 +219,6 @@ FILE *fp;
 		 fprintf(stderr, "Failed to update fd_tcp_rmem\n");
 		 return EXIT_FAILURE;
  }
-
-
-
 
 	return EXIT_SUCCESS;
 }

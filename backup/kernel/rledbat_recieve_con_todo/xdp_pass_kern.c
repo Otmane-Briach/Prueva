@@ -53,8 +53,6 @@ struct {
 // (either periodic or delay-triggered)
 // 2* mss
 #define MIN_REDUCTION_BYTES 2896
-#define SENDING 1
-#define RECIEVING 2
 
 #define max_t(type, x, y) ({    \
     type __x = (x);             \
@@ -91,7 +89,6 @@ struct {
     __type(key, __u32);
     __type(value, struct tcp_ts_option);
     __uint(max_entries, 1);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } timestamps_map SEC(".maps");
 
 // to allow computing RTT information
@@ -526,10 +523,7 @@ static __s64 qd_min_lastN(__s64 last_qd) {
     return min_value;
 }
 
-static inline void get_TSecr(struct tcphdr *tcph, void *data, void *data_end, __u8 context) {
-
-
-
+static void get_TSecr(struct tcphdr *tcph, void *data, void *data_end) {
 
 __u32 key_0=0;
 struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
@@ -537,7 +531,6 @@ if(!timestamp){
   bpf_printk("Failed to read timestamp_map");
   return;
 }
-
 
 bool timestamp_encontrado = false;
 __u8 size;
@@ -603,17 +596,11 @@ for (int i = 0; (i < MAX_OPTIONS && p < end); i++) { //-------EN ESTE BUCLE TIEN
     p += (size - 2);
 }
 
-          if (timestamp_encontrado) {
-                if(context==SENDING)
-                    bpf_printk("SENDING");
-                else
-                    bpf_printk("RECIEVING");
-
-                bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
-
-          } else {
-            bpf_printk("El paquete recibido no tiene opciones");
-          }
+if (timestamp_encontrado) {
+  //bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
+} else {
+  bpf_printk("El paquete recibido no tiene opciones");
+}
   return;
 }
 
@@ -872,7 +859,6 @@ char *get_current_state() {
 
 
 //---------------------------------TESTEO-------------------------------------//
-
 SEC("tc-out")
 int tc_drop2(struct __sk_buff *skb){
 
@@ -906,14 +892,8 @@ int tc_drop2(struct __sk_buff *skb){
     __u64 sending_time;
     sending_time=bpf_ktime_get_ns();
 
-
-
-
-    get_TSecr(tcph, data, data_end, SENDING);
-
-
-
-    //bpf_printk("TSecr: %lld, Tsval: %lld\n", timestamp->tsecr, timestamp->tsval);
+    get_TSecr(tcph, data, data_end);
+    
 
 return TC_ACT_OK;
 }
@@ -922,8 +902,6 @@ return TC_ACT_OK;
 // Función principal
 SEC("tc-in")
 int tc_drop1(struct __sk_buff *skb) {
-
-
 
   void *data = (void *)(long)skb->data;
   void *data_end = (void *)(long)skb->data_end;
@@ -993,7 +971,7 @@ int tc_drop1(struct __sk_buff *skb) {
   bpf_map_update_elem(&packet_number_map, &key_0, packet_number, BPF_ANY);
 
 
-  get_TSecr(tcph, data, data_end, RECIEVING);
+  get_TSecr(tcph, data, data_end);
 
   //check if this packet is a retransmission
   //nos fijamos en el numero de secuencia y el valor de ts_val
@@ -1104,7 +1082,7 @@ int tc_drop1(struct __sk_buff *skb) {
   if(!tcp_rmem_ptr || !window_scales_ptr || !rcwnd_ok_ptr || !min_w_ptr)
     return TC_ACT_OK;
 
- //bpf_printk(" PRIMERO window :%lld",rcwnd_ok_ptr->rcwnd_ok);
+ bpf_printk(" PRIMERO window :%lld",rcwnd_ok_ptr->rcwnd_ok);
 if(1==*packet_number){
 
       if(getSyn(tcph) && isWSoption(tcph, data, data_end)){
@@ -1629,7 +1607,7 @@ if(1==*packet_number){
    if(!state)
     return TC_ACT_OK;
 
-/*
+
    bpf_printk("read;reception_time; %lld, rtt: %lld, rtt_min: %lld",reception_time, *rtt_ptr, *rtt_min_ptr);
    //bpf_printk(" rtt: %lld",*rtt_ptr);
    //bpf_printk(" rtt_min: %lld ",*rtt_min_ptr);
@@ -1648,7 +1626,7 @@ if(1==*packet_number){
    bpf_printk(" gain :%lld",gain(*rtt_min_ptr));
    bpf_printk(" periodic_reduction_time :%lld",periodic_reduction_ptr->periodic_reduction_time);
 
-*/
+
     //------------------------FALTA HACER COMPROBACIONES Y ENTENDER CODIGO
 
 
