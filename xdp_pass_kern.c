@@ -26,7 +26,7 @@
 #define MAX_COUNT_RTT 10000
 #define MAX_OPTIONS 11
 // rledbat target
-#define TARGET 60LL*6 //60ms
+#define TARGET 60000000 //60ms
 //gain is defined as 1/min(gain_constant,ceil((2*target)/base))               -0
 #define GAIN_CONSTANT 16
 // Constant for multiplicative decrease computation
@@ -63,6 +63,15 @@ struct {
 })
 
 #define MAX_SIZE 15 // Asigna el tamaño adecuado para tus estados
+
+
+
+
+//--------------------PARTE SENDING
+
+
+
+
 //----------------------------VVARIABLES GLOBALES-----------------------------//
 
 //----------------------------INICIALIZADOS A CERO----------------------------//
@@ -82,8 +91,8 @@ struct eth_hdr {
   };
 
 struct tcp_ts_option {
-    __s64 tsval;
-    __s64 tsecr;
+    __u64 tsval;
+    __u64 tsecr;
 };
 
 struct {
@@ -100,6 +109,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, MAX_COUNT_RTT);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tsval_rtt_array_map SEC(".maps");
 
 struct {
@@ -121,6 +131,7 @@ struct {
     __type(key, __u32);
     __type(value, __u64);
     __uint(max_entries, MAX_COUNT_RTT);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } time_rtt_array_map SEC(".maps");
 // ts_val_array and time_rtt_array are exported to the write moduleS
 struct {
@@ -266,6 +277,7 @@ struct {
     __uint(max_entries, 1);
     __type(key, __u32);
     __type(value, char[MAX_SIZE]);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } state_map SEC(".maps");
 
 //used to know if periodic_reduction_time is from the previous or the next one
@@ -388,6 +400,71 @@ struct {
 } ssthresh_map SEC(".maps");
 
 
+
+
+//-----------------------variables exlusivas de los paquetes salientes--------//
+
+
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u32);
+    __uint(max_entries, 1);
+} count_ack_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u32);
+    __uint(max_entries, 1);
+} current_ack_map SEC(".maps");
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u64);
+    __uint(max_entries, 1);
+} last_ack_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __s32);
+    __uint(max_entries, 1);
+} tcp_rcwnd_map SEC(".maps");
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __s64);
+    __uint(max_entries, 1);
+} check_ack_map SEC(".maps");
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u64);
+    __uint(max_entries, 1);
+} time_tsval_rtt_map SEC(".maps");
+
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u32);
+    __uint(max_entries, 1);
+} flag_dup_ack_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u32);
+    __type(value, __u32);
+    __uint(max_entries, 1);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+} key_timestamps SEC(".maps");
+
+
+
+
+
 //--------------------------FUNCIONES CALLBACK--------------------------------//
 // bucle para calcular el minimo
 static long qd_min_lastN_loop(__u32 i, void *min_value_ptr) {
@@ -407,9 +484,9 @@ static long qd_min_lastN_loop(__u32 i, void *min_value_ptr) {
 
 static inline long print_loop_callback(__u32 key, void *ctx) {
   __u64 *value;
-  value = bpf_map_lookup_elem(&values_map, &key);
+  value = bpf_map_lookup_elem(&tsval_rtt_array_map, &key);
   if (value) {
-      bpf_printk("last_qd_values_map[%u] = %lld\n", key, *value);
+      bpf_printk("tsval_rtt_array_map[%u] = %lld\n", key, *value);
   }
   return 0; // El valor de retorno indica si la función debe continuar (0) o detenerse (1)
 }
@@ -455,6 +532,7 @@ static long min_rtt_callback(__u32 index, void *ctx) {
 
     if (!tsval_rtt || !time_rtt)
         return 0;
+/*
 //Cuando el host A envia un segmento, inlcuye la hora actual en el ts_val
 //eso lo guarda en el array tsval_rtt.
 //Cuando el host B  recibe el paquete, y envia un ack,
@@ -462,10 +540,10 @@ static long min_rtt_callback(__u32 index, void *ctx) {
 //De esta manera el host A teniendo el TSval=hora de envio y Tla hora registrada de
 //cuando le llego el el segmento de TSecr=Tsvall,
 //Ya tiene la hora de ida y la hora de recepción. Se hace la resta y eso es el rtt.
+  */
     if (*tsval_rtt == tsecr) {
         if (tsecr != loop_context->tsecr_already_checked) {
             __u64 new_rtt = reception_time - *time_rtt;
-
             loop_context->tsecr_already_checked = tsecr;
             loop_context->rtt = new_rtt;
 
@@ -473,7 +551,6 @@ static long min_rtt_callback(__u32 index, void *ctx) {
                 loop_context->rtt_min = new_rtt;
                 bpf_printk("RTT_MIN ESTABlISHED");
             }
-
             return 1; // Finalizar la iteración del bucle
         } else {
             bpf_printk("receive_REPEATED");
@@ -528,93 +605,114 @@ static __s64 qd_min_lastN(__s64 last_qd) {
 
 static inline void get_TSecr(struct tcphdr *tcph, void *data, void *data_end, __u8 context) {
 
+    __u32 key_0=0;
+    struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
+    if(!timestamp){
+      bpf_printk("Failed to read timestamp_map");
+      return;
+    }
 
 
+    bool timestamp_encontrado = false;
+    __u8 size;
+    __u8 *end;
+    __u8 *p;
 
-__u32 key_0=0;
-struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
-if(!timestamp){
-  bpf_printk("Failed to read timestamp_map");
-  return;
-}
+    //get the TSecr from the received packet
+    // debe ir a la dirección en la que está el ts val
+    //la intencion es que p apunte al inicio de las opciones
+    //TCP (si las hay), que estarán justo despues de la cabera TCP.
+    p = (__u8 *)tcph + sizeof(*tcph);
+    end = (__u8 *)tcph + tcph->doff * 4;
 
-
-bool timestamp_encontrado = false;
-__u8 size;
-__u8 *end;
-__u8 *p;
-
-//get the TSecr from the received packet
-// debe ir a la dirección en la que está el ts val
-//la intencion es que p apunte al inicio de las opciones
-//TCP (si las hay), que estarán justo despues de la cabera TCP.
-p = (__u8 *)tcph + sizeof(*tcph);
-end = (__u8 *)tcph + tcph->doff * 4;
-
-// Me aseguro de que 'p' y 'end' estén dentro del rango de 'data' y 'data_end'
-//   || (void *)p < data || (void *)end < data
-if ((void *)p >= data_end || (void *)end > data_end) {
-    return;
-}
-
-for (int i = 0; (i < MAX_OPTIONS && p < end); i++) { //-------EN ESTE BUCLE TIENE QUE HABER SI O SI LA CONDICION &&P<END.
-    __u8 kind;
-
-    // Me aseguro de que 'p' esté dentro del rango de 'data' y 'data_end' en cada vuelta.
-    if ((void *)p >= data_end) {
+    // Me aseguro de que 'p' y 'end' estén dentro del rango de 'data' y 'data_end'
+    //   || (void *)p < data || (void *)end < data
+    if ((void *)p >= data_end || (void *)end > data_end) {
+        bpf_printk("Estoy dentro");
         return;
     }
 
-    // Me aseguro de que tenga al menos un byte para leer el "kind"
-    if (p + 1 > end || p + 1 > data_end) {
-        return;
-    }
+    for (int i = 0; (i < MAX_OPTIONS && p < end); i++) { //-------EN ESTE BUCLE TIENE QUE HABER SI O SI LA CONDICION &&P<END.
+        __u8 kind;
 
-    kind = *p++; //ya puedo avanzar
-
-    if (kind == 0)
-        break;
-
-    if (kind == 1)
-        continue;
-
-    // Me aseguro de que tengas al menos un byte para el campo size
-    if (p + 1 > end || p + 1 > data_end) {
-        return;
-    }
-
-    size = *p++; //ya puedo avanzar
-
-    if (size < 2 || p + size > end || p + size > data_end) {
-        return;
-    }
-
-    if (kind == 8 && size == 10) { // Opción de timestamp
-      timestamp_encontrado=true;
-        if (p + 8 > end || p + 8 > data_end) { // Comprobar que hay suficientes bytes para TSval y TSecr
+        // Me aseguro de que 'p' esté dentro del rango de 'data' y 'data_end' en cada vuelta.
+        if ((void *)p >= data_end) {
             return;
         }
 
-        timestamp->tsval = bpf_ntohl(*(__u32 *)(p)); //ya puedo avanzar
-        timestamp->tsecr = bpf_ntohl(*(__u32 *)(p + 4));
+        // Me aseguro de que tenga al menos un byte para leer el "kind"
+        if (p + 1 > end || p + 1 > data_end) {
+            return;
+        }
 
-        break; // Terminar el bucle después de encontrar la opción de timestamp
+        kind = *p++; //ya puedo avanzar
+
+        if (kind == 0)
+            break;
+
+        if (kind == 1)
+            continue;
+
+        // Me aseguro de que tengas al menos un byte para el campo size
+        if (p + 1 > end || p + 1 > data_end) {
+            return;
+        }
+
+        size = *p++; //ya puedo avanzar
+
+        if (kind == 8 && size == 10) { // Opción de timestamp
+          timestamp_encontrado=true;
+            if (p + 8 > end || p + 8 > data_end) { // Comprobar que hay suficientes bytes para TSval y TSecr
+                return;
+            }
+
+            timestamp->tsval = bpf_ntohl(*(__u32 *)(p)); //ya puedo avanzar
+            timestamp->tsecr = bpf_ntohl(*(__u32 *)(p + 4));
+
+            break; // Terminar el bucle después de encontrar la opción de timestamp
+        }
+        p += (size - 2);
     }
-    p += (size - 2);
-}
 
-          if (timestamp_encontrado) {
-                if(context==SENDING)
-                    bpf_printk("SENDING");
-                else
-                    bpf_printk("RECIEVING");
+        if (timestamp_encontrado) {
 
-                bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
+              if(context==SENDING){
+                    
+                    //bpf_printk("SENDING");
+                     __u32 *key_timestamps_ptr= bpf_map_lookup_elem(&key_timestamps,&key_0);
+                     if(!key_timestamps_ptr){
+                        bpf_printk("Failed to read map key_timestamps_ptr ");
+                        return;
+                     }
+                      //avanzamos en modulo, nos aseguramos de que el valor esté en el rango [0, MAX_COUNT_RTT-1].
+                      (*key_timestamps_ptr)++;
+                      *key_timestamps_ptr %= MAX_COUNT_RTT;
+                    
+                    __u64 tsval_value = timestamp->tsval;
+                    __u64 time_value = bpf_ktime_get_ns();
 
-          } else {
-            bpf_printk("El paquete recibido no tiene opciones");
-          }
-  return;
+                    // Actualizar tsval_rtt_array_map
+                    int ret1 = bpf_map_update_elem(&tsval_rtt_array_map, key_timestamps_ptr, &tsval_value, BPF_ANY);
+                    if (ret1 != 0) {
+                        bpf_printk("Failed to update map tsval_rtt_array_map ");
+                    }
+
+                    // Actualizar time_rtt_array_map
+                    int ret2 = bpf_map_update_elem(&time_rtt_array_map, key_timestamps_ptr, &time_value, BPF_ANY);
+                    if (ret2 != 0) {
+                        bpf_printk("Failed to update map tsval_rtt_array_map ");
+                    }
+                  
+              }else{
+                  //bpf_printk("RECIEVING");
+              }
+
+              //bpf_printk("TSval: %u, TSecr: %u", timestamp->tsval, timestamp->tsecr);
+        } else {
+              bpf_printk("El paquete recibido no tiene opciones");
+        }
+
+      return;
 }
 
 static int getSyn(struct tcphdr *tcph){
@@ -656,7 +754,7 @@ static int isWSoption(struct tcphdr *tcph, void *data, void *data_end){
         if (kind == 0)
             break;
 
-// No-op option with no length.
+    // No-op option with no length.
         if (kind == 1)
             continue;
 
@@ -667,10 +765,6 @@ static int isWSoption(struct tcphdr *tcph, void *data, void *data_end){
 
         size = *p++; //en el sigueinte byte esta el size.
 
-        //si size es menor que 2, entonces es una opcion MAL FORMADA.
-        if (size < 2 || p + size > end || p + size > data_end) {
-            return 0;
-        }
 
         if(kind == 3){
               return 1; //si es tres, es que la opcion WS esta activada.
@@ -837,10 +931,10 @@ static __s64 bytes_to_decrease_rledbat(__u64 window,__u64 scale, __u64 queue_del
     bpf_printk("decrease_rledbat aux:%lld num:%lld, den:%lld window_size:%llu gain:%llu window_half:%lld \n", aux, num, den, window_size, gain_val, window_half);
 
     if (decrease>=window_half){
-    bpf_printk("Mayor que half");
+  //  bpf_printk("Mayor que half");
       return decrease;
 	  }else{
-    bpf_printk("Menor que half, retornamos half %ld\n", window_half);
+    //bpf_printk("Menor que half, retornamos half %ld\n", window_half);
       return window_half;
     }
 }
@@ -879,7 +973,7 @@ int tc_drop2(struct __sk_buff *skb){
   void *data = (void *)(long)skb->data;
   void *data_end = (void *)(long)skb->data_end;
 
-// COMPROBACIONES INICIALES DE SEGURIDAD DE LIMITES DE MEMORIA
+    // COMPROBACIONES INICIALES DE SEGURIDAD DE LIMITES DE MEMORIA
 
   if (data + sizeof(struct eth_hdr) > data_end)
     return TC_ACT_OK;
@@ -903,23 +997,162 @@ int tc_drop2(struct __sk_buff *skb){
     return TC_ACT_OK;
 
 
-    __u64 sending_time;
-    sending_time=bpf_ktime_get_ns();
+
+//------------------------------------------------
+  __u32 key_0=0;
+  struct w_scale *window_scales_ptr=bpf_map_lookup_elem(&window_scales_map,&key_0);
+  __u32 *current_ack_ptr=bpf_map_lookup_elem(&current_ack_map,&key_0);
+  __u32 *tcp_rcwnd_ptr= bpf_map_lookup_elem(&tcp_rcwnd_map,&key_0);
+  __u64 *last_ack_ptr= bpf_map_lookup_elem(&last_ack_map,&key_0);
+  __u32 *count_ack_ptr= bpf_map_lookup_elem(&count_ack_map,&key_0);
+  __u32 *flag_dup_ack_ptr= bpf_map_lookup_elem(&flag_dup_ack_map,&key_0);
+  struct rcwnd_ok_str *rcwnd_ok_ptr=bpf_map_lookup_elem(&rcwnd_ok_map,&key_0);
+  struct seq *seq_values = bpf_map_lookup_elem(&seq_map, &key_0);
+  struct tcp_ts_option *timestamp_ptr = bpf_map_lookup_elem(&timestamps_map, &key_0);
+
+    
+
+  if(!window_scales_ptr  || !current_ack_ptr
+    || !tcp_rcwnd_ptr    ||!seq_values
+    ||!last_ack_ptr      || !count_ack_ptr
+    || !flag_dup_ack_ptr ||!rcwnd_ok_ptr ||!timestamp_ptr){
+    bpf_printk("Failed to read map SENDING");
+        return TC_ACT_OK;
+  }
+  
+
+
+  long long RECWND_MSS;
+  RECWND_MSS = MSS / (1<<window_scales_ptr->rcv_wscale) + 1;
+  //compute min between the cp crwnd and the one we compute
+  *current_ack_ptr = (__u32)bpf_ntohl(tcph->ack_seq);
+  //bpf_printk("current_ack: %llu", *current_ack_ptr);
+
+  // Read parameters of packet sent to pass them to the read module
+  get_TSecr(tcph, data, data_end, SENDING);
+
+  *tcp_rcwnd_ptr =  bpf_ntohs(tcph->window);
+
+   if(*current_ack_ptr==*last_ack_ptr){
+          (*count_ack_ptr)++;
+      }
+
+
+  if(*count_ack_ptr==4){
+      *flag_dup_ack_ptr=1;
+      *count_ack_ptr=0;
+  }
+
+
+      if (rcwnd_ok_ptr->rcwnd_ok > (long long)*tcp_rcwnd_ptr){
+        bpf_printk("TCP is LIMITING the RATE, rledbat wanted:%lld;tcp:%d;scale(bits):%u\n",  rcwnd_ok_ptr->rcwnd_ok, *tcp_rcwnd_ptr, window_scales_ptr->rcv_wscale);
+          rcwnd_ok_ptr->rcwnd_ok=*tcp_rcwnd_ptr;
+
+      }
+      if (  rcwnd_ok_ptr->rcwnd_ok>65535){
+            rcwnd_ok_ptr->rcwnd_ok=65535;
+      }
+      //change with MSS from the read module in the syn/ack
+      if (  rcwnd_ok_ptr->rcwnd_ok < 2* RECWND_MSS){
+          if ((long long)*tcp_rcwnd_ptr >= 2 * RECWND_MSS)
+          {  rcwnd_ok_ptr->rcwnd_ok = 2 *RECWND_MSS;}
+          else if (   rcwnd_ok_ptr->rcwnd_ok < RECWND_MSS) {
+            rcwnd_ok_ptr->rcwnd_ok= RECWND_MSS; }
+          // else, between MSS and 2*MSS, rcwnd_ok = same value as TCP window
+      }
+
+
+      *last_ack_ptr=*current_ack_ptr;
 
 
 
+// Ajustar la ventana TCP.
+tcph->window = bpf_htons(rcwnd_ok_ptr->rcwnd_ok);
 
-    get_TSecr(tcph, data, data_end, SENDING);
+// Recalcular el checksum de la capa 4.
+// Necesitamos calcular la diferencia entre el valor anterior y el nuevo valor
+// de la ventana para poder actualizar el checksum de manera incremental.
+int delta = bpf_htons(rcwnd_ok_ptr->rcwnd_ok) - bpf_htons(*tcp_rcwnd_ptr);
+bpf_l4_csum_replace(skb,
+                    offsetof(struct tcphdr, check),
+                    0,
+                    delta,
+                    0);
 
+// Si tuvieras otros campos que modificar, como la dirección IP o el puerto,
+// necesitarías llamar a `bpf_l4_csum_replace` nuevamente con los valores adecuados.
+// Pero dado que sólo estás modificando la ventana TCP, una llamada es suficiente.
 
+// Ya no es necesario ajustar skb->ip_summed en eBPF como se hace en C.
 
-    //bpf_printk("TSecr: %lld, Tsval: %lld\n", timestamp->tsecr, timestamp->tsval);
+__u64 *time_tsval_rtt_ptr=bpf_map_lookup_elem(&time_tsval_rtt_map, &key_0);
+if(!time_tsval_rtt_ptr){
+    bpf_printk("Failed to read time_tsval_rtt_ptr in SENDING");
+    return TC_ACT_OK;
+}
+bpf_printk("write;%llu;%llu;%d;%d;%llu;%d", rcwnd_ok_ptr->rcwnd_ok, *last_ack_ptr, seq_values->last_seq, *tcp_rcwnd_ptr, *time_tsval_rtt_ptr, *flag_dup_ack_ptr);
+bpf_printk("%llu \n", window_scales_ptr->rcv_wscale);
 
-return TC_ACT_OK;
+    return TC_ACT_OK;
 }
 
 
+/*
 // Función principal
+SEC("tc-in")
+int tc_dropTEST(struct __sk_buff *skb){
+
+  void *data = (void *)(long)skb->data;
+  void *data_end = (void *)(long)skb->data_end;
+
+// COMPROBACIONES INICIALES DE SEGURIDAD DE LIMITES DE MEMORIA
+
+  if (data + sizeof(struct eth_hdr) > data_end)
+    return TC_ACT_OK;
+
+  struct eth_hdr *eth = data;
+
+  if (eth->h_proto != bpf_htons(ETH_P_IP))
+    return TC_ACT_OK;
+
+  struct iphdr *iph = data + sizeof(struct eth_hdr);
+
+  if ((void*)iph + sizeof(struct iphdr) > data_end)
+    return TC_ACT_OK;
+
+  if (iph->protocol != IPPROTO_TCP)
+    return TC_ACT_OK;
+
+  struct tcphdr *tcph = data + sizeof(*eth) + sizeof(*iph);
+
+  if ((void*)tcph + sizeof(struct tcphdr) > data_end)
+    return TC_ACT_OK;
+
+  __u64 reception_time=bpf_ktime_get_ns();;
+  __u32 key_0=0;
+
+  get_TSecr(tcph, data, data_end, RECIEVING);
+
+  struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
+  if(!timestamp){
+    return TC_ACT_OK;
+  }
+
+//antes de llamar a min rtt imprimr lo que haya dentro del mapa:
+__u32 *key_timestamps_ptr= bpf_map_lookup_elem(&key_timestamps,&key_0);
+if(!key_timestamps_ptr)
+  return TC_ACT_OK;
+
+  bpf_printk("key_timestamps_ptr %u", *key_timestamps_ptr);
+  bpf_loop(*key_timestamps_ptr, print_loop_callback, 0, 0);
+  min_rtt(timestamp->tsecr,reception_time);
+
+    return TC_ACT_OK;
+}
+*/
+
+
+
 SEC("tc-in")
 int tc_drop1(struct __sk_buff *skb) {
 
@@ -952,6 +1185,9 @@ int tc_drop1(struct __sk_buff *skb) {
     return TC_ACT_OK;
 
 
+  
+
+
 //-----------------
   __u32 key_0=0;
   __u64 denominator_CA;
@@ -967,9 +1203,11 @@ int tc_drop1(struct __sk_buff *skb) {
   __u16 dport = bpf_ntohs(tcph->dest);
   //last seq recieved
   struct seq *seq_values=bpf_map_lookup_elem(&seq_map, &key_0);
-  if(!seq_values)
-    return TC_ACT_OK;
-
+    if(!seq_values){
+         bpf_printk("Failed to read a map in line 1223 SEQ_VALUES");
+        return TC_ACT_OK;
+    }
+  
   seq_values->last_seq = bpf_ntohl(tcph->seq); // numero de secuencia del paquete entrante.
 
   //si el puerto destino es difente al que escuchamos en ledbat, skipea(para paquetes que llegan)
@@ -979,7 +1217,7 @@ int tc_drop1(struct __sk_buff *skb) {
   //hace la funcion de todo el proceso de do_gettimeofday y time_to_tm
   //nos devuelve el tiempo en nanosegundos directamente desde el inicio del sistema.
   reception_time = bpf_ktime_get_ns();
-  update_state("undef");
+
 
 
   // Print and update qd_values_pointer_map
@@ -988,7 +1226,7 @@ int tc_drop1(struct __sk_buff *skb) {
     return TC_ACT_OK;
 
 
-  bpf_printk("packet_number: %lld\n", *packet_number);
+  //bpf_printk("packet_number: %lld\n", *packet_number);
   *packet_number = *packet_number + 1;
   bpf_map_update_elem(&packet_number_map, &key_0, packet_number, BPF_ANY);
 
@@ -1018,6 +1256,7 @@ int tc_drop1(struct __sk_buff *skb) {
 
   //Check para el acceso
   if(!is_retransmission || !tsval_rtt || !tsval_rtt_old || !to_increase_CA_ptr || !next_decrease_time_ptr ||  !increase_bytes_ptr){
+    bpf_printk("Failed to read a map in line 1273 ");
     return TC_ACT_OK;
   }
 
@@ -1036,6 +1275,7 @@ int tc_drop1(struct __sk_buff *skb) {
   //update global variables rtt and rtt_min
   struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
   if(!timestamp){
+     bpf_printk("Failed to read a map in line 1291 TIMESTAMP");
     return TC_ACT_OK;
   }
   min_rtt(timestamp->tsecr,reception_time);
@@ -1044,6 +1284,7 @@ int tc_drop1(struct __sk_buff *skb) {
   //doff suele ser igual a 5, es la cantidad de palabras de 32 bits que tenemos.
   __u32 *acked=bpf_map_lookup_elem(&acked_map, &key_0);
   if(!acked){
+     bpf_printk("Failed to read a map in line 1299");
     return TC_ACT_OK;
   }
 
@@ -1059,8 +1300,11 @@ int tc_drop1(struct __sk_buff *skb) {
   __u64 *rtt_min=bpf_map_lookup_elem(&rtt_min_map, &key_0);
   __u64 *queue_delay_ptr=bpf_map_lookup_elem(&queue_delay_map, &key_0);
 
-  if(!rtt_min || !rtt || !queue_delay_ptr)
-   return TC_ACT_OK;
+  if(!rtt_min || !rtt || !queue_delay_ptr){
+    bpf_printk("Failed to read a map in line 1315");
+    return TC_ACT_OK;
+  }
+   
 
   *queue_delay_ptr = *rtt - *rtt_min;
   //bpf_printk("queue_delay: %lu", *queue_delay);
@@ -1101,8 +1345,10 @@ int tc_drop1(struct __sk_buff *skb) {
 
 
 
-  if(!tcp_rmem_ptr || !window_scales_ptr || !rcwnd_ok_ptr || !min_w_ptr)
-    return TC_ACT_OK;
+  if(!tcp_rmem_ptr || !window_scales_ptr || !rcwnd_ok_ptr || !min_w_ptr){
+     bpf_printk("Failed to read a map Line 1357");
+     return TC_ACT_OK;
+  }
 
  //bpf_printk(" PRIMERO window :%lld",rcwnd_ok_ptr->rcwnd_ok);
 if(1==*packet_number){
@@ -1122,11 +1368,13 @@ if(1==*packet_number){
             //(el maximo representable con 16 bits de la ventana )
             //trataremos de encontrar un factor de escala que pueda
             //representar ese valor.
+
+            bpf_printk("Space:%d", space);
              while (space > 65535 && (window_scales_ptr->rcv_wscale) < 14) {
                  space >>= 1; //(dividir por 2) porque ocupamos el doble en cada incremento.
                  (window_scales_ptr->rcv_wscale)++;
               }
-
+               bpf_printk("window_scales_ptr->rcv_wscale:%d", window_scales_ptr->rcv_wscale);
             //Calcula el factor de escala de ventana.
             window_scales_ptr->window_scale=1<<(window_scales_ptr->rcv_wscale); // = 2^rcv_wscale
 
@@ -1144,6 +1392,8 @@ if(1==*packet_number){
             //cero, y rcwnd_ok valdrá su minimo que es 1.
             }
 
+            bpf_printk("rcwnd_ok_ptr->rcwnd_ok:%d", rcwnd_ok_ptr->rcwnd_ok);
+
             // set minimum window depending on scaling
             rest=MIN_REDUCTION_BYTES%window_scales_ptr->window_scale;
             *min_w_ptr=MIN_REDUCTION_BYTES/window_scales_ptr->window_scale; //min reduction, 2 segmentos, 2896.
@@ -1155,6 +1405,10 @@ if(1==*packet_number){
 
       }else {
               bpf_printk("WARNING: first packet received is not a SYN, and it should!");
+              bpf_printk("get syn: %d:", tcph->syn);
+               __u8 i= isWSoption(tcph, data, data_end);
+              bpf_printk("IsWoption:: %d:", i);
+
               return TC_ACT_OK;
       }
 }
@@ -1169,8 +1423,10 @@ if(1==*packet_number){
   __s32 *is_first_ss_ptr= bpf_map_lookup_elem(&is_first_ss_map, &key_0);
   struct periodic_reduction_str *periodic_reduction_ptr= bpf_map_lookup_elem(&periodic_reduction_map, &key_0);
 
-  if(!reduction_ptr || !rcwnd_scale_ptr || !recent_retransmission_ptr ||!keep_window_time_ptr || !periodic_reduction_ptr || !is_first_ss_ptr)
+  if(!reduction_ptr || !rcwnd_scale_ptr || !recent_retransmission_ptr ||!keep_window_time_ptr || !periodic_reduction_ptr || !is_first_ss_ptr){
+     bpf_printk("Failed to read a map Line 1425");
     return TC_ACT_OK;
+}
     //window_scales_ptr->rcv_wscale es el exponente del factor de escala (que va hasta el 14)
     //window_scales_ptr->window_scale el factor de escala (numero por el que se multiplica la ventana que se envia en tcp)
     //rcwnd_ok_ptr la ventana que se envia en tcp
@@ -1184,8 +1440,10 @@ if(1==*packet_number){
   __u64 *rtt_min_ptr = bpf_map_lookup_elem(&rtt_min_map, &key_0);
 
 
-    if(!periodic_reduction_scheduled_ptr || !freeze_ended_ptr || !ssthresh_ptr || !is_ss_allowed_ptr ||!rtt_ptr ||!rtt_min_ptr)
+    if(!periodic_reduction_scheduled_ptr || !freeze_ended_ptr || !ssthresh_ptr || !is_ss_allowed_ptr ||!rtt_ptr ||!rtt_min_ptr){
+         bpf_printk("Failed to read a map Line 1425");
       return TC_ACT_OK;
+    }
 
 
 
@@ -1264,10 +1522,10 @@ if(1==*packet_number){
 */
     //----------------------------------
 
-          if(*is_retransmission && !*recent_retransmission_ptr){
+          if(*is_retransmission && !(*recent_retransmission_ptr)){
               *recent_retransmission_ptr=1;
               //if there is a loss and we are in a periodic reduction update ssthresh to rcwnd_ok/2
-              if(!*periodic_reduction_scheduled_ptr&&!*freeze_ended_ptr){
+              if(!(*periodic_reduction_scheduled_ptr)&&!(*freeze_ended_ptr)){
 
                   __u64 ssthresh_aux=rcwnd_ok_ptr->rcwnd_ok/2;
 
@@ -1445,7 +1703,7 @@ if(1==*packet_number){
                 #endif
 
                       if(reception_time>=*next_decrease_time_ptr){
-                        bpf_printk("Entro en el if_reception");
+                        //bpf_printk("Entro en el if_reception");
                               __s64 decrease_aux=0;
                               *is_ss_allowed_ptr=0;
 
@@ -1454,12 +1712,7 @@ if(1==*packet_number){
                             //W += max( (GAIN - Constant * W * (delay/target - 1)), -W/2) )
                              decrease_aux=bytes_to_decrease_rledbat(rcwnd_ok_ptr->rcwnd_ok,window_scales_ptr->window_scale,*queue_delay_ptr,*rtt_min_ptr);
 
-                               bpf_printk("decrease returned: %lld\n",decrease_aux);
-                               bpf_printk(" window_scale: %d\n",window_scales_ptr->window_scale);
-                               bpf_printk(" ventana: %lld\n ",rcwnd_ok_ptr->rcwnd_ok);
-                               bpf_printk(" queue_delay :%lld\n",*queue_delay_ptr);
-                               bpf_printk(" rtt_min :%lld\n",window_scales_ptr->window_scale);
-
+                               bpf_printk("decrease returned: %lld\n, window_scale: %d, ventana: %lld, ueue_delay :%lld, rtt_min :%lld ",decrease_aux, window_scales_ptr->window_scale, rcwnd_ok_ptr->rcwnd_ok, *queue_delay_ptr, window_scales_ptr->window_scale);
 
                               //we can still increase,check if we decrease to set the reduction
                                if(decrease_aux<0){
@@ -1625,31 +1878,22 @@ if(1==*packet_number){
                 }
               }
 
-   char *state=get_current_state();
+
+
+
+    
+       char  *state=get_current_state();
    if(!state)
     return TC_ACT_OK;
 
-/*
-   bpf_printk("read;reception_time; %lld, rtt: %lld, rtt_min: %lld",reception_time, *rtt_ptr, *rtt_min_ptr);
-   //bpf_printk(" rtt: %lld",*rtt_ptr);
-   //bpf_printk(" rtt_min: %lld ",*rtt_min_ptr);
-   bpf_printk(" window :%lld",rcwnd_ok_ptr->rcwnd_ok);
-   bpf_printk(" thresh :%lld",*ssthresh_ptr);
-   bpf_printk(" State: %s", state);
-   bpf_printk(" is_retransmission :%lld",*is_retransmission);
-   bpf_printk(" rcwnd_scale :%lld",*rcwnd_scale_ptr);
-   bpf_printk(" reduction :%lld",*reduction_ptr);
-   bpf_printk(" queue_delay :%lld",*queue_delay_ptr);
-   bpf_printk(" TARGET :%lld",TARGET);
-   bpf_printk(" rcv_wscale :%lld",window_scales_ptr->rcv_wscale);
-   bpf_printk(" acked :%lld",*acked);
-   bpf_printk(" window_scale :%lld",window_scales_ptr->window_scale);
-   bpf_printk(" increase_bytes :%lld",*increase_bytes_ptr);
-   bpf_printk(" gain :%lld",gain(*rtt_min_ptr));
-   bpf_printk(" periodic_reduction_time :%lld",periodic_reduction_ptr->periodic_reduction_time);
 
-*/
-    //------------------------FALTA HACER COMPROBACIONES Y ENTENDER CODIGO
+   bpf_printk(" read;reception_time; %lld, rtt: %lld, rtt_min: %lld",reception_time, *rtt_ptr, *rtt_min_ptr);
+   bpf_printk(" window :%lld, thresh :%lld,  State: %s, is_retransmission :%lld,  to reduice: :%lld, reduction :%lld, queue_delay :%lld",rcwnd_ok_ptr->rcwnd_ok,*ssthresh_ptr, state, *is_retransmission, *rcwnd_scale_ptr, *reduction_ptr,*queue_delay_ptr);
+   bpf_printk(" TARGET :%lld, rcv_wscale :%lld, acked :%lld,  window_scale :%lld, increase_bytes :%lld, gain :%lld, periodic_reduction_time :%lld",TARGET, window_scales_ptr->rcv_wscale, *acked, window_scales_ptr->window_scale, *increase_bytes_ptr, gain(*rtt_min_ptr), periodic_reduction_ptr->periodic_reduction_time );
+
+
+
+  //------------------------FALTA HACER COMPROBACIONES Y ENTENDER CODIGO
 
 
     //----------------------ANALISIS OPCIONES DEL PAQUETE RECIBIDO-----------------//

@@ -23,6 +23,16 @@
 #define IS_SS_ALLOWED_MAP_PATH "/sys/fs/bpf/tc/globals/is_ss_allowed_map"
 #define FREEZE_ENDED_MAP_PATH "/sys/fs/bpf/tc/globals/freeze_ended_map"
 #define WINDOW_SCALES_MAP_PATH "/sys/fs/bpf/tc/globals/window_scales_map"
+#define SSTHRESH_MAP_PATH "/sys/fs/bpf/tc/globals/ssthresh_map"
+
+#define MAX_COUNT_RTT 10000
+
+
+
+#define KEY "/sys/fs/bpf/tc/globals/key_timestamps"
+#define STATE "/sys/fs/bpf/tc/globals/state_map"
+//#define TIME_RTT_ARRAY_MAP_PATH "/sys/fs/bpf/tc/globals/time_rtt_array_map"
+//#define TSVAL_RTT_ARRY_MAP_PATH "/sys/fs/bpf/tc/globals/tsval_rtt_array_map"
 
 
 #define TCP_RMEM_PATH "/proc/sys/net/ipv4/tcp_rmem"
@@ -30,6 +40,7 @@
 #define TCP_HEADER_SIZE 20
 #define MSS 1448 //unidad de ventana
 #define INIT_WINDOW 1*MSS //Ventana inicial
+#define MAX_WINDOW 65535
 
 struct rcwnd_ok_str {
   // effective reception window
@@ -38,6 +49,21 @@ struct rcwnd_ok_str {
   __u64 rcwnd_ok_before;
 };
 
+
+#define MAX_SIZE 15 // Asegúrate de que esta definición coincida con la que usaste en la definición del mapa
+
+void update_state_user_space(int fd_state, const char *new_state) {
+    __u32 key = 0;
+    char state_value[MAX_SIZE] = {0}; // Inicializa todo a cero
+
+    // Copia la cadena new_state a state_value, pero asegúrate de no desbordar el buffer.
+    snprintf(state_value, MAX_SIZE, "%s", new_state);
+
+    if (bpf_map_update_elem(fd_state, &key, state_value, BPF_ANY)) {
+        fprintf(stderr, "Failed to update state map\n");
+        return;
+    }
+}
 
 int main(int argc, char **argv) {
 	__u32 key;
@@ -98,6 +124,33 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
+
+
+
+
+
+  int fd_key = bpf_obj_get(KEY);
+  if (fd_values < 0) {
+    fprintf(stderr, "Failed to open map: %s\n", KEY);
+    return EXIT_FAILURE;
+  }
+
+  int fd_state = bpf_obj_get(STATE);
+  if (fd_values < 0) {
+    fprintf(stderr, "Failed to open map: %s\n", STATE);
+    return EXIT_FAILURE;
+  }
+
+
+
+ 	int fd_ssthresh = bpf_obj_get(SSTHRESH_MAP_PATH);
+  if (fd_ssthresh < 0) {
+    fprintf(stderr, "Failed to open map: %s\n", SSTHRESH_MAP_PATH);
+    return EXIT_FAILURE;
+  }
+   
+
+
 //-----------------------------------INITIALICIAR----------------------------//
 
 //INITIALIZE LAS_QD_VALUES
@@ -123,6 +176,23 @@ int main(int argc, char **argv) {
 			return EXIT_FAILURE;
 	}
 
+  key = 0;
+	value = 0;
+	if (bpf_map_update_elem(fd_key, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
+
+update_state_user_space(fd_state, "undef");
+
+key = 0;
+	value = MAX_WINDOW;		
+	if (bpf_map_update_elem(fd_ssthresh, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
+
+
 //------------------------------
 
 
@@ -133,7 +203,7 @@ key = 0; // Assuming you are using the key 0 since max_entries is 1 and no key w
 rcwnd_ok_value.rcwnd_ok = INIT_WINDOW;
 
 if (bpf_map_update_elem(fd_rcwnd_ok_map, &key, &rcwnd_ok_value, BPF_ANY)) {
-	fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH); // NOTE: you mentioned RTT_MIN_MAP_PATH. Shouldn't it be RCWND_OK_MAP_PATH?
+	fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH); 
 	return EXIT_FAILURE;
 }
  printf("rcwnd_ok_value: %lli\n",rcwnd_ok_value.rcwnd_ok);
@@ -159,6 +229,10 @@ if (bpf_map_update_elem(fd_rcwnd_ok_map, &key, &rcwnd_ok_value, BPF_ANY)) {
 	}
 
 
+	if (bpf_map_update_elem(fd_window_scales_map, &key, &value, BPF_ANY)) {
+			fprintf(stderr, "Failed to update map: %s\n", RTT_MIN_MAP_PATH);
+			return EXIT_FAILURE;
+	}
 
 
 	//------------------------------
@@ -167,13 +241,6 @@ if (bpf_map_update_elem(fd_rcwnd_ok_map, &key, &rcwnd_ok_value, BPF_ANY)) {
 //--------------------------------PRINT---------------------------------------//
 
 
-//Resetear packet_numeber
-	int ret = system("sudo rm /sys/fs/bpf/tc/globals/packet_number_map");
-	 if (ret == -1) {
-			 perror("Error al ejecutar el comando");
-			 return 1;
-	 }
-	 printf("Mapa pcket_number: RESETEADO\n" );
 
 
 //obtener valores sysctl_rmem
