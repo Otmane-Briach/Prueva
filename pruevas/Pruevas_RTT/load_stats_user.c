@@ -10,7 +10,6 @@
 #include <net/if.h>
 #include <sys/resource.h>
 #include <netinet/tcp.h>
-
 //------------------------------DEFINES---------------------------------------//
 #define MAP_SIZE 20
 #define BPF_OBJ_FILE "xdp_pass_kern.o"
@@ -75,6 +74,13 @@ int main(int argc, char **argv) {
 	        return EXIT_FAILURE;
 	    }
 	}
+	for (key = 0; key < MAP_SIZE; key++) {
+    	value = rand()%100 +1;
+	    if (bpf_map_update_elem(fd_time_rtt, &key, &value, BPF_ANY)) {
+	        fprintf(stderr, "Failed to update values_map\n");
+	        return EXIT_FAILURE;
+	    }
+	}
 
   /*
   value = MAX_LONG_LONG;
@@ -106,13 +112,6 @@ int main(int argc, char **argv) {
       return EXIT_FAILURE;
   }
 
-  key = 8;
-  value = 50;
-  if (bpf_map_update_elem(fd_time_rtt, &key, &value, BPF_ANY)) {
-      fprintf(stderr, "Failed to update pointer_map\n");
-      return EXIT_FAILURE;
-  }
-
   key = 0;
   value = 0;
   if (bpf_map_update_elem(fd_pointer, &key, &value, BPF_ANY)) {
@@ -138,9 +137,19 @@ int main(int argc, char **argv) {
 				        fprintf(stderr, "Failed to read from last_qd_values_map\n");
 				        return EXIT_FAILURE;
 				    } else {
-				        printf("fd_tsval_array[%u] = %lld\n", key, value);
+				        printf("tsval_rtt_array[%u] = %lld\n", key, value);
 				    }
 				}
+				printf("\n\n");
+				// Read and print values from last_qd_values_map
+				for (key = 0; key < MAP_SIZE; key++) {
+					    if (bpf_map_lookup_elem(fd_time_rtt, &key, &value)) {
+					        fprintf(stderr, "Failed to read from last_qd_values_map\n");
+					        return EXIT_FAILURE;
+					    } else {
+					        printf("time_rtt_array[%u] = %lld\n", key, value);
+					    }
+					}
         printf("-------------------------------\n");
 
         key = 0;
@@ -157,22 +166,22 @@ int main(int argc, char **argv) {
      	        printf("Alreade_cheked = %lld\n", value);
      	    }
 
-          key=8;
+         /* key=8;
           if (bpf_map_lookup_elem(fd_time_rtt, &key, &value)) {
                fprintf(stderr, "Failed to read from pointer_map\n");
                return EXIT_FAILURE;
            } else {
                printf("TIME_RTT[8] = %lld\n", value);
            }
-
-           key=0;
+*/
+        /*   key=0;
            if (bpf_map_lookup_elem(fd_pointer, &key, &value)) {
                 fprintf(stderr, "Failed to read from pointer_map\n");
                 return EXIT_FAILURE;
             } else {
                 printf("pointer_map = %lld\n", value);
             }
-
+*/
           printf("\n\n");
           if(ya==4){
             key = 0;

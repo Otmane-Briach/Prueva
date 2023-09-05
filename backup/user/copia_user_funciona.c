@@ -1,5 +1,5 @@
 
-//lee los mapas pero estan vacios, porque no esta atachhado a la interfaz ni a nada, solo esta subido en el kernel. 
+//lee los mapas pero estan vacios, porque no esta atachhado a la interfaz ni a nada, solo esta subido en el kernel.
 
 #include <stdio.h>
 #include <stdlib.h>

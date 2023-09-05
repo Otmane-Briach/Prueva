@@ -455,7 +455,7 @@ static void clear_rtt_table(void) {
 // Función principal
 SEC("tc")
 int tc_drop1(struct __sk_buff *skb) {
-
+/*
   void *data = (void *)(long)skb->data;
   void *data_end = (void *)(long)skb->data_end;
 
@@ -481,14 +481,17 @@ int tc_drop1(struct __sk_buff *skb) {
 
   if ((void*)tcph + sizeof(struct tcphdr) > data_end)
     return TC_ACT_OK;
-
+*/
 
 //----------------------ANALISIS OPCIONES DEL PAQUETE RECIBIDO-----------------//
 
-  get_TSecr(tcph, data, data_end);
-  int w=isWSoption(tcph, data, data_end);
-  min_rtt(7888,100);
+  //get_TSecr(tcph, data, data_end);
+  //int w=isWSoption(tcph, data, data_end);
+  
+  min_rtt(300,100);
 
+  //bpf_printk("estoy aqui");
+/*
   __u32 key_0=0;
   long *value=bpf_map_lookup_elem(&pointer_map, &key_0);
   if(!value){
@@ -498,7 +501,7 @@ int tc_drop1(struct __sk_buff *skb) {
     clear_rtt_table();
   }
 
-
+*/
 return TC_ACT_OK;
 }
 ///----------------------------//
