@@ -1164,63 +1164,6 @@ if(!time_tsval_rtt_ptr){
 }
 
 
-
-/*
-// Función principal
-SEC("tc-in")
-int tc_dropTEST(struct __sk_buff *skb){
-
-  void *data = (void *)(long)skb->data;
-  void *data_end = (void *)(long)skb->data_end;
-
-// COMPROBACIONES INICIALES DE SEGURIDAD DE LIMITES DE MEMORIA
-
-  if (data + sizeof(struct eth_hdr) > data_end)
-    return TC_ACT_OK;
-
-  struct eth_hdr *eth = data;
-
-  if (eth->h_proto != bpf_htons(ETH_P_IP))
-    return TC_ACT_OK;
-
-  struct iphdr *iph = data + sizeof(struct eth_hdr);
-
-  if ((void*)iph + sizeof(struct iphdr) > data_end)
-    return TC_ACT_OK;
-
-  if (iph->protocol != IPPROTO_TCP)
-    return TC_ACT_OK;
-
-  struct tcphdr *tcph = data + sizeof(*eth) + sizeof(*iph);
-
-  if ((void*)tcph + sizeof(struct tcphdr) > data_end)
-    return TC_ACT_OK;
-
-  __u64 reception_time=bpf_ktime_get_ns();;
-  __u32 key_0=0;
-
-  get_TSecr(tcph, data, data_end);
-  get_TSval(tcph, data, data_end);
-  struct tcp_ts_option *timestamp = bpf_map_lookup_elem(&timestamps_map, &key_0);
-  if(!timestamp){
-    return TC_ACT_OK;
-  }
-
-//antes de llamar a min rtt imprimr lo que haya dentro del mapa:
-__u32 *key_timestamps_ptr= bpf_map_lookup_elem(&key_timestamps,&key_0);
-if(!key_timestamps_ptr)
-  return TC_ACT_OK;
-
-  bpf_printk("tsval: %llu, tsecr: %llu", timestamp->tsval,timestamp->tsecr);
-
-  bpf_printk("key_timestamps_ptr %u", *key_timestamps_ptr);
-  bpf_loop(*key_timestamps_ptr, print_loop_callback, 0, 0);
-  min_rtt(timestamp->tsecr,reception_time);
-
-    return TC_ACT_OK;
-}
-*/
-
 SEC("tc-in")
 int rledbat_incoming_exit(struct __sk_buff *skb) {
 
@@ -1966,13 +1909,6 @@ if(1==*packet_number){
    bpf_printk(" window :%lld, thresh :%lld,  State: %s, is_retransmission :%lld,  to reduice: :%lld, reduction :%lld, queue_delay :%lld",rcwnd_ok_ptr->rcwnd_ok,*ssthresh_ptr, state, *is_retransmission, *rcwnd_scale_ptr, *reduction_ptr,*queue_delay_ptr);
    bpf_printk(" TARGET :%lld, rcv_wscale :%lld, acked :%lld,  window_scale :%lld, increase_bytes :%lld, gain :%lld, periodic_reduction_time :%lld",TARGET, window_scales_ptr->rcv_wscale, *acked, window_scales_ptr->window_scale, *increase_bytes_ptr, gain(*rtt_min_ptr), periodic_reduction_ptr->periodic_reduction_time );
 
-  // bpf_printk(" window :%lld, State: %s, queue_delay: %lld",rcwnd_ok_ptr->rcwnd_ok, state, *queue_delay_ptr);
-
-
-  //------------------------FALTA HACER COMPROBACIONES Y ENTENDER CODIGO
-
-
-    //----------------------ANALISIS OPCIONES DEL PAQUETE RECIBIDO-----------------//
 
 
     return TC_ACT_OK;
